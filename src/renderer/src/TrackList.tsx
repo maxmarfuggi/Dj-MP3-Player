@@ -1,4 +1,4 @@
-import { type DragEvent, type KeyboardEvent, memo, useRef, useState } from 'react';
+import { type CSSProperties, type DragEvent, type KeyboardEvent, memo, useRef, useState } from 'react';
 import { formatBpm, formatTime } from './format';
 import { PlayIcon, SortArrowIcon } from './icons';
 import { KeyTag } from './KeyTag';
@@ -21,11 +21,17 @@ interface DropTarget {
   position: 'before' | 'after';
 }
 
-const SORTABLE_COLUMNS: { column: SortColumn; label: string; className?: string }[] = [
-  { column: 'title', label: 'Title' },
-  { column: 'artist', label: 'Artist' },
-  { column: 'bpm', label: 'BPM', className: 'track-numeric' },
-];
+interface SortableColumn {
+  column: SortColumn;
+  label: string;
+  className?: string;
+}
+
+const TITLE_COLUMN: SortableColumn = { column: 'title', label: 'Title' };
+const ARTIST_COLUMN: SortableColumn = { column: 'artist', label: 'Artist' };
+const GENRE_COLUMN: SortableColumn = { column: 'genre', label: 'Genre' };
+const LABEL_COLUMN: SortableColumn = { column: 'label', label: 'Label' };
+const BPM_COLUMN: SortableColumn = { column: 'bpm', label: 'BPM', className: 'track-numeric' };
 
 // Memoized so that the playback position ticking along does not re-render every row.
 export const TrackList = memo(function TrackList({
@@ -47,6 +53,25 @@ export const TrackList = memo(function TrackList({
   if (entries.length === 0) {
     return <p className="empty-list">No tracks here.</p>;
   }
+
+  // Only some libraries have genres and labels, so their columns appear when the list uses them.
+  const showGenre = entries.some((entry) => entry.track.genre);
+  const showLabel = entries.some((entry) => entry.track.label);
+  const sortableColumns = [
+    TITLE_COLUMN,
+    ARTIST_COLUMN,
+    ...(showGenre ? [GENRE_COLUMN] : []),
+    ...(showLabel ? [LABEL_COLUMN] : []),
+    BPM_COLUMN,
+  ];
+  const columns = [
+    '32px',
+    'minmax(0, 2.2fr)',
+    'minmax(0, 1.5fr)',
+    ...(showGenre ? ['minmax(0, 1fr)'] : []),
+    ...(showLabel ? ['minmax(0, 1fr)'] : []),
+    '52px 46px 50px',
+  ].join(' ');
 
   const playingThisList = current !== null && currentSource === viewKey;
   // A track that is playing from another list is still marked here.
@@ -94,10 +119,13 @@ export const TrackList = memo(function TrackList({
   };
 
   return (
-    <div className={`track-list${isPlaying ? '' : ' paused'}`}>
+    <div
+      className={`track-list${isPlaying ? '' : ' paused'}`}
+      style={{ '--track-columns': columns } as CSSProperties}
+    >
       <div className="track-row track-header">
         <span className="track-number">#</span>
-        {SORTABLE_COLUMNS.map(({ column, label, className }) => {
+        {sortableColumns.map(({ column, label, className }) => {
           const active = sort?.column === column;
           return (
             <button
@@ -156,8 +184,20 @@ export const TrackList = memo(function TrackList({
                 </>
               )}
             </span>
-            <span className="track-text track-title">{track.title}</span>
+            <span className="track-text track-title">
+              {track.color && (
+                <span
+                  className="track-color"
+                  style={{ background: track.color.value }}
+                  title={track.color.name}
+                  aria-label={track.color.name}
+                />
+              )}
+              {track.title}
+            </span>
             <span className="track-text track-secondary">{track.artist}</span>
+            {showGenre && <span className="track-text track-secondary">{track.genre}</span>}
+            {showLabel && <span className="track-text track-secondary">{track.label}</span>}
             <span className="track-numeric track-secondary">
               {track.bpm === null ? '' : formatBpm(track.bpm)}
             </span>

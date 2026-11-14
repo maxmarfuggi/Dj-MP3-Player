@@ -160,7 +160,7 @@ export function App() {
           <p key={`${error.volumePath}/${error.source}`} className="banner banner-error">
             <WarningIcon />
             <span className="banner-text">
-              Could not read the {error.source} library on “{error.volumeName}”: {error.message}
+              Could not read {SOURCE_LABELS[error.source]} on “{error.volumeName}”: {error.message}
             </span>
           </p>
         ))}

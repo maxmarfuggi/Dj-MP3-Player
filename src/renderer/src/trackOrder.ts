@@ -1,6 +1,6 @@
 import type { Track } from '../../shared/types';
 
-export type SortColumn = 'title' | 'artist' | 'bpm';
+export type SortColumn = 'title' | 'artist' | 'genre' | 'label' | 'bpm';
 
 export interface SortState {
   column: SortColumn;
@@ -56,17 +56,26 @@ export function moveItem<T>(items: readonly T[], from: number, to: number): T[] 
   return result;
 }
 
-/** Sorts entries by a column. Tracks without a BPM always go last; ties keep list order. */
+/**
+ * Sorts entries by a column. Tracks without a BPM, or with a blank artist,
+ * genre or label, always go last; ties keep list order.
+ */
 export function sortEntries(entries: readonly TrackEntry[], sort: SortState): TrackEntry[] {
   const sign = sort.direction === 'asc' ? 1 : -1;
+  const compareText = (x: string | undefined, y: string | undefined, a: Track, b: Track): number => {
+    if (!x || !y) return Number(!x) - Number(!y);
+    return sign * collator.compare(x, y) || collator.compare(a.title, b.title);
+  };
   const compare = (a: Track, b: Track): number => {
     switch (sort.column) {
       case 'title':
         return sign * collator.compare(a.title, b.title);
       case 'artist':
-        // Blank artists go last, like missing BPMs.
-        if (!a.artist || !b.artist) return Number(!a.artist) - Number(!b.artist);
-        return sign * collator.compare(a.artist, b.artist) || collator.compare(a.title, b.title);
+        return compareText(a.artist, b.artist, a, b);
+      case 'genre':
+        return compareText(a.genre, b.genre, a, b);
+      case 'label':
+        return compareText(a.label, b.label, a, b);
       case 'bpm':
         if (a.bpm === null || b.bpm === null) return Number(a.bpm === null) - Number(b.bpm === null);
         return sign * (a.bpm - b.bpm);

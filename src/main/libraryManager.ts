@@ -8,7 +8,7 @@ import { listVolumes } from './volumes';
 const SCAN_INTERVAL_MS = 2000;
 
 type LoadResult =
-  | { library: Library; trackPaths: Map<string, string> }
+  | { library: Library; trackPaths: Map<string, string>; artworkPaths: Map<string, string> }
   | { error: string };
 
 interface VolumeEntry {
@@ -71,10 +71,22 @@ export class LibraryManager {
 
   /** Absolute path of a track's audio file, or null if the track is unknown. */
   resolveTrackPath(libraryId: string, trackId: string): string | null {
+    return this.resolve(libraryId, (result) => result.trackPaths.get(trackId));
+  }
+
+  /** Absolute path of a track's artwork, or null if the track is unknown or has none. */
+  resolveArtworkPath(libraryId: string, trackId: string): string | null {
+    return this.resolve(libraryId, (result) => result.artworkPaths.get(trackId));
+  }
+
+  private resolve(
+    libraryId: string,
+    relativePathIn: (result: Extract<LoadResult, { library: Library }>) => string | undefined,
+  ): string | null {
     for (const { volume, results } of this.entries.values()) {
       for (const result of results.values()) {
         if ('library' in result && result.library.id === libraryId) {
-          const relativePath = result.trackPaths.get(trackId);
+          const relativePath = relativePathIn(result);
           return relativePath === undefined ? null : resolveInsideVolume(volume.path, relativePath);
         }
       }
@@ -125,6 +137,11 @@ export class LibraryManager {
         entry.results.set(adapter.source, {
           library,
           trackPaths: new Map(library.tracks.map((track) => [track.id, track.relativePath])),
+          artworkPaths: new Map(
+            library.tracks.flatMap((track): [string, string][] =>
+              track.artworkPath ? [[track.id, track.artworkPath]] : [],
+            ),
+          ),
         });
       } catch (error) {
         console.error(`Loading the ${adapter.source} library on ${entry.volume.path} failed:`, error);

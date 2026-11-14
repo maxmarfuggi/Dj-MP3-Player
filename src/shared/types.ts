@@ -1,4 +1,11 @@
-export type LibrarySource = 'rekordbox' | 'serato';
+/** `rekordbox` is rekordbox's Device Library (`export.pdb`). */
+export type LibrarySource = 'rekordbox' | 'deviceLibraryPlus' | 'serato';
+
+export interface TrackColor {
+  name: string;
+  /** CSS colour. */
+  value: string;
+}
 
 export interface Track {
   id: string;
@@ -10,6 +17,12 @@ export interface Track {
   durationSec: number | null;
   /** Path of the audio file relative to the volume root, using `/` separators. */
   relativePath: string;
+  // Only Device Library Plus provides the fields below.
+  genre?: string;
+  label?: string;
+  color?: TrackColor;
+  /** Path of an artwork image that exists on the volume, relative to its root. */
+  artworkPath?: string;
 }
 
 export interface PlaylistNode {
@@ -64,4 +77,9 @@ export const MEDIA_SCHEME = 'media';
 /** URL the renderer hands to `<audio>`; resolved to a file by the main process. */
 export function trackUrl(libraryId: string, trackId: string): string {
   return `${MEDIA_SCHEME}://track/${encodeURIComponent(libraryId)}/${encodeURIComponent(trackId)}`;
+}
+
+/** URL of a track's artwork, for tracks that have an `artworkPath`. */
+export function artworkUrl(libraryId: string, trackId: string): string {
+  return `${MEDIA_SCHEME}://artwork/${encodeURIComponent(libraryId)}/${encodeURIComponent(trackId)}`;
 }

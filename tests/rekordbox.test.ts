@@ -172,10 +172,9 @@ describe('rekordboxAdapter', () => {
     expect(library.playlists.map((node) => [node.name, node.trackIds])).toEqual([['Set', ['1']]]);
   });
 
-  it('explains that a Device Library Plus only export is not supported', async () => {
+  it('leaves a Device Library Plus only export to its own adapter', async () => {
     await writeFile(path.join(databaseDirectory, 'exportLibrary.db'), 'encrypted');
 
-    expect(await rekordboxAdapter.detect(root)).toBe(true);
-    await expect(rekordboxAdapter.load({ path: root, name: 'GIGS' })).rejects.toThrow(/Device Library Plus/);
+    expect(await rekordboxAdapter.detect(root)).toBe(false);
   });
 });

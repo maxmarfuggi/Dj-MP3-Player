@@ -11,6 +11,7 @@
   --accent: #5c9dff;
   --accent-soft: rgba(92, 157, 255, 0.15);
   --rekordbox: #8494ff;
+  --device-library-plus: #c08cff;
   --serato: #45c994;
   --error: #ff8080;
   /* Height kept clear at the top of the sidebar for the window buttons. */
@@ -160,6 +161,10 @@ p {
 
 .source-rekordbox {
   --source: var(--rekordbox);
+}
+
+.source-deviceLibraryPlus {
+  --source: var(--device-library-plus);
 }
 
 .source-serato {
@@ -505,7 +510,7 @@ p {
 
 .track-row {
   display: grid;
-  grid-template-columns: 32px minmax(0, 2.2fr) minmax(0, 1.5fr) 52px 46px 50px;
+  grid-template-columns: var(--track-columns, 32px minmax(0, 2.2fr) minmax(0, 1.5fr) 52px 46px 50px);
   align-items: center;
   gap: 16px;
   width: 100%;
@@ -581,6 +586,15 @@ button.track-row:hover .track-play {
 
 .track-title {
   font-weight: 500;
+}
+
+.track-color {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: 1px;
 }
 
 .track-secondary {
@@ -749,6 +763,17 @@ button.track-row:hover .track-play {
   font-size: 9.5px;
   letter-spacing: 0.06em;
   color: var(--text-faint);
+}
+
+.now-artwork {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+  box-shadow:
+    0 3px 10px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07);
 }
 
 /* A small record in the current track's label colour, turning while it plays. */

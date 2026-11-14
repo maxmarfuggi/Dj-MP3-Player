@@ -1,4 +1,5 @@
-import type { CSSProperties } from 'react';
+import { type CSSProperties, useState } from 'react';
+import { artworkUrl } from '../../shared/types';
 import { labelColor } from './colors';
 import { formatBpm, formatTime } from './format';
 import { NextIcon, PauseIcon, PlayIcon, PreviousIcon, VisualizerIcon, VolumeIcon } from './icons';
@@ -10,18 +11,24 @@ export function PlayerBar({ player, onOpenVisualizer }: { player: Player; onOpen
   const { current, isPlaying, currentTime, duration, volume } = player;
   const disabled = current === null;
   const track = current?.track ?? null;
+  const artwork = current?.track.artworkPath ? artworkUrl(current.libraryId, current.track.id) : null;
+  const [brokenArtwork, setBrokenArtwork] = useState<string | null>(null);
 
   return (
     <footer className="player-bar">
       <div className="now-playing">
-        {/* The same label colour as the record on the turntable visualizer. */}
-        <div
-          className={`mini-record${isPlaying ? ' spinning' : ''}`}
-          style={{ '--label': labelColor(track) } as CSSProperties}
-          aria-hidden="true"
-        >
-          <div className="mini-record-label" />
-        </div>
+        {artwork && artwork !== brokenArtwork ? (
+          <img className="now-artwork" src={artwork} alt="" onError={() => setBrokenArtwork(artwork)} />
+        ) : (
+          // The same label colour as the record on the turntable visualizer.
+          <div
+            className={`mini-record${isPlaying ? ' spinning' : ''}`}
+            style={{ '--label': labelColor(track) } as CSSProperties}
+            aria-hidden="true"
+          >
+            <div className="mini-record-label" />
+          </div>
+        )}
         <div className="now-text">
           {track ? (
             <>

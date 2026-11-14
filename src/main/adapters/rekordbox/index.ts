@@ -3,11 +3,10 @@ import path from 'node:path';
 import type { Library, PlaylistNode, Track } from '../../../shared/types';
 import { exists, fileNameWithoutExtension, toRelativePath } from '../paths';
 import { type LibraryAdapter, type Volume, libraryId } from '../types';
-import { type PdbData, type PdbPlaylistNode, parsePdb } from './pdb';
+import { type PdbData, type PdbPlaylistEntry, type PdbPlaylistNode, parsePdb } from './pdb';
 
+/** The "Device Library" export. Device Library Plus has its own adapter. */
 const PDB_PATH = path.join('PIONEER', 'rekordbox', 'export.pdb');
-/** "Device Library Plus", the encrypted SQLite database newer rekordbox versions export. */
-const DEVICE_LIBRARY_PLUS_PATH = path.join('PIONEER', 'rekordbox', 'exportLibrary.db');
 
 const ROOT_PARENT_ID = 0;
 
@@ -15,19 +14,11 @@ export const rekordboxAdapter: LibraryAdapter = {
   source: 'rekordbox',
 
   async detect(volumePath) {
-    return (
-      (await exists(path.join(volumePath, PDB_PATH))) ||
-      (await exists(path.join(volumePath, DEVICE_LIBRARY_PLUS_PATH)))
-    );
+    return exists(path.join(volumePath, PDB_PATH));
   },
 
   async load(volume) {
     const pdbPath = path.join(volume.path, PDB_PATH);
-    if (!(await exists(pdbPath))) {
-      throw new Error(
-        'This USB only has a Device Library Plus export (exportLibrary.db), which is not supported yet.',
-      );
-    }
     const pdb = parsePdb(await readFile(pdbPath));
     if (pdb.skippedRows > 0) {
       console.warn(`${pdbPath}: skipped ${pdb.skippedRows} unreadable rows`);
@@ -62,13 +53,18 @@ export function buildRekordboxLibrary(pdb: PdbData, volume: Volume): Library {
     volumeName: volume.name,
     volumePath: volume.path,
     tracks: [...tracks.values()],
-    playlists: buildPlaylistTree(pdb, tracks),
+    playlists: buildPlaylistTree(pdb.playlistNodes, pdb.playlistEntries, tracks),
   };
 }
 
-function buildPlaylistTree(pdb: PdbData, tracks: Map<number, Track>): PlaylistNode[] {
-  const entriesByPlaylist = new Map<number, { entryIndex: number; trackId: number }[]>();
-  for (const entry of pdb.playlistEntries) {
+/** Both rekordbox exports describe playlists the same way. */
+export function buildPlaylistTree(
+  nodes: PdbPlaylistNode[],
+  playlistEntries: PdbPlaylistEntry[],
+  tracks: Map<number, Track>,
+): PlaylistNode[] {
+  const entriesByPlaylist = new Map<number, PdbPlaylistEntry[]>();
+  for (const entry of playlistEntries) {
     // Entries can outlive the tracks they point to; skip those.
     if (!tracks.has(entry.trackId)) continue;
     const entries = entriesByPlaylist.get(entry.playlistId) ?? [];
@@ -78,7 +74,7 @@ function buildPlaylistTree(pdb: PdbData, tracks: Map<number, Track>): PlaylistNo
 
   // The root's ID is reserved; a row using it would be its own ancestor.
   const rowsById = new Map(
-    pdb.playlistNodes.filter((row) => row.id !== ROOT_PARENT_ID).map((row) => [row.id, row]),
+    nodes.filter((row) => row.id !== ROOT_PARENT_ID).map((row) => [row.id, row]),
   );
   const rowsByParent = new Map<number, PdbPlaylistNode[]>();
   for (const row of rowsById.values()) {

@@ -15,7 +15,17 @@ interface SidebarProps {
   onOpenFolder(): void;
 }
 
-export const SOURCE_LABELS: Record<LibrarySource, string> = { rekordbox: 'rekordbox', serato: 'Serato' };
+export const SOURCE_LABELS: Record<LibrarySource, string> = {
+  rekordbox: 'Device Library',
+  deviceLibraryPlus: 'Device Library Plus',
+  serato: 'Serato',
+};
+
+const SOURCE_DESCRIPTIONS: Record<LibrarySource, string> = {
+  rekordbox: 'rekordbox Device Library (export.pdb)',
+  deviceLibraryPlus: 'rekordbox Device Library Plus (exportLibrary.db)',
+  serato: 'Serato library',
+};
 const INDENT_PX = 14;
 
 export function Sidebar({ libraries, selection, onSelect, onOpenFolder }: SidebarProps) {
@@ -89,7 +99,9 @@ export function Sidebar({ libraries, selection, onSelect, onOpenFolder }: Sideba
                   <UsbIcon size={14} />
                 </span>
                 <span className="library-name">{library.volumeName}</span>
-                <span className="badge">{SOURCE_LABELS[library.source]}</span>
+                <span className="badge" title={SOURCE_DESCRIPTIONS[library.source]}>
+                  {SOURCE_LABELS[library.source]}
+                </span>
               </h3>
               <ul>
                 <li>

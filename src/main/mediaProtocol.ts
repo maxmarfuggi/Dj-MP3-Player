@@ -19,6 +19,9 @@ const MIME_TYPES: Record<string, string> = {
   '.opus': 'audio/ogg',
   '.aif': 'audio/aiff',
   '.aiff': 'audio/aiff',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
 };
 
 const AIFF_EXTENSIONS = new Set(['.aif', '.aiff']);
@@ -38,17 +41,21 @@ export function registerMediaScheme(): void {
 }
 
 /**
- * Serves `media://track/<libraryId>/<trackId>`. The renderer never names a
- * file path, so it can only reach files that a loaded library lists.
+ * Serves `media://track/<libraryId>/<trackId>` and
+ * `media://artwork/<libraryId>/<trackId>`. The renderer never names a file
+ * path, so it can only reach files that a loaded library lists.
  */
 export function handleMediaProtocol(libraries: LibraryManager): void {
   protocol.handle(MEDIA_SCHEME, async (request) => {
     const url = new URL(request.url);
     const [libraryId, trackId] = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
-    if (url.hostname !== 'track' || libraryId === undefined || trackId === undefined) {
-      return new Response(null, { status: 404 });
-    }
-    const resolved = libraries.resolveTrackPath(libraryId, trackId);
+    if (libraryId === undefined || trackId === undefined) return new Response(null, { status: 404 });
+    const resolved =
+      url.hostname === 'track'
+        ? libraries.resolveTrackPath(libraryId, trackId)
+        : url.hostname === 'artwork'
+          ? libraries.resolveArtworkPath(libraryId, trackId)
+          : null;
     const file = resolved === null ? null : await findFile(resolved);
     if (file === null) return new Response(null, { status: 404 });
     const source = await openSource(file);

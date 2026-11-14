@@ -90,6 +90,18 @@ describe('sortEntries', () => {
     expect(titles(sortEntries(entries, { column: 'artist', direction: 'desc' })).at(-1)).toBe('alpha');
   });
 
+  it('sorts by genre or label, with tracks that have none last', () => {
+    const tagged = toEntries([
+      track('b', { genre: 'Techno', label: 'Kompakt' }),
+      track('a', {}),
+      track('d', { genre: 'house', label: '' }),
+      track('c', { genre: 'House', label: 'Defected' }),
+    ]);
+    expect(titles(sortEntries(tagged, { column: 'genre', direction: 'asc' }))).toEqual(['c', 'd', 'b', 'a']);
+    expect(titles(sortEntries(tagged, { column: 'genre', direction: 'desc' }))).toEqual(['b', 'c', 'd', 'a']);
+    expect(titles(sortEntries(tagged, { column: 'label', direction: 'asc' }))).toEqual(['c', 'b', 'a', 'd']);
+  });
+
   it('sorts by BPM with missing BPMs last and ties in list order', () => {
     expect(titles(sortEntries(entries, { column: 'bpm', direction: 'asc' }))).toEqual([
       'Track 10',

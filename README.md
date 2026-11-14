@@ -6,7 +6,7 @@ and play its tracks, like a regular music player. This is a proof of concept.
 
 ## Running it
 
-Requires Node.js 20.19 or newer.
+Requires Node.js 22.13 or newer (the tests use the built-in `node:sqlite`).
 
 ```sh
 npm install
@@ -30,12 +30,21 @@ The app is Electron with a React UI.
 - `src/main/adapters/` has one adapter per library format. Each turns its
   format into the same `Library` model (`src/shared/types.ts`), so the UI and
   the player do not know which software wrote the USB.
-  - **rekordbox**: reads `PIONEER/rekordbox/export.pdb` with the parser in
-    `adapters/rekordbox/pdb.ts`.
+  - **rekordbox Device Library**: reads `PIONEER/rekordbox/export.pdb` with
+    the parser in `adapters/rekordbox/pdb.ts`.
+  - **rekordbox Device Library Plus**: reads `PIONEER/rekordbox/exportLibrary.db`
+    (`adapters/rekordbox/deviceLibraryPlus.ts`). It is a SQLCipher-encrypted
+    SQLite database with a key shared by every export.
+    `adapters/rekordbox/sqlcipher.ts` decrypts it in memory (applying any
+    `-wal` file), and the plain copy is written to a temp folder only while
+    `node:sqlite` reads it. This export also provides genre, label, track
+    colour and artwork. A USB usually carries both exports, and they can
+    differ, so each appears as its own library.
   - **Serato**: reads `_Serato_/database V2` and the crates in
     `_Serato_/Subcrates`.
 - `src/main/mediaProtocol.ts` serves audio to the UI as
-  `media://track/<libraryId>/<trackId>`, with range requests so seeking works.
+  `media://track/<libraryId>/<trackId>`, with range requests so seeking works,
+  and artwork as `media://artwork/<libraryId>/<trackId>`.
   AIFF files are converted to WAV on the fly (`src/main/aiff.ts`) because
   Chromium cannot play AIFF.
 - `src/renderer/` is the UI: playlist tree, track list and transport bar.
@@ -58,12 +67,12 @@ The USB is only ever read, never written to.
 
 ## Not supported yet
 
-- rekordbox USBs exported only in the newer Device Library Plus format
-  (`exportLibrary.db`). The app says so when it sees one.
+- Genre, label, colour and artwork from the Device Library (`export.pdb`);
+  only Device Library Plus libraries show them.
 - Apple Lossless (ALAC) files and compressed AIFF-C. They are skipped and
   greyed out.
 - Serato smart crates and Serato's custom crate order (crates are sorted by
   name).
 - Waveforms, cue points, beatgrids and search.
-- Volume detection is only tested on macOS. Windows and Linux have code paths
-  but have not been run.
+- Volume detection is tested on macOS and Windows. Linux has a code path but
+  has not been run.
