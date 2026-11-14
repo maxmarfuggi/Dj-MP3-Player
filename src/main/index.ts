@@ -1,11 +1,13 @@
 import path from 'node:path';
-import { BrowserWindow, app, dialog, ipcMain } from 'electron';
+import { BrowserWindow, app, dialog, ipcMain, nativeTheme } from 'electron';
 import type { LibraryState, OpenFolderResult } from '../shared/types';
 import { IPC } from '../shared/ipc';
 import { LibraryManager } from './libraryManager';
 import { handleMediaProtocol, registerMediaScheme } from './mediaProtocol';
 
 registerMediaScheme();
+// The UI is dark only, so dialogs, menus and the Windows title bar should be too.
+nativeTheme.themeSource = 'dark';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -19,8 +21,14 @@ function createWindow(): BrowserWindow {
     height: 720,
     minWidth: 760,
     minHeight: 480,
-    backgroundColor: '#14151a',
+    backgroundColor: '#0d0e12',
     title: 'DJ MP3 Player',
+    // On macOS the UI runs up to the top edge, with the window buttons over the
+    // sidebar. The renderer leaves room for them and marks where to drag.
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 18, y: 16 } }
+      : {}),
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: true,

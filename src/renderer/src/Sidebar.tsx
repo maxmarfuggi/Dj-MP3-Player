@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { Library, PlaylistNode } from '../../shared/types';
-import { ChevronIcon, FolderIcon, PlaylistIcon } from './icons';
+import type { Library, LibrarySource, PlaylistNode } from '../../shared/types';
+import { ChevronIcon, DiscIcon, FolderIcon, PlaylistIcon, PlusIcon, UsbIcon } from './icons';
 
 export interface Selection {
   libraryId: string;
@@ -15,7 +15,7 @@ interface SidebarProps {
   onOpenFolder(): void;
 }
 
-const SOURCE_LABELS = { rekordbox: 'rekordbox', serato: 'Serato' } as const;
+export const SOURCE_LABELS: Record<LibrarySource, string> = { rekordbox: 'rekordbox', serato: 'Serato' };
 const INDENT_PX = 14;
 
 export function Sidebar({ libraries, selection, onSelect, onOpenFolder }: SidebarProps) {
@@ -40,7 +40,7 @@ export function Sidebar({ libraries, selection, onSelect, onOpenFolder }: Sideba
         <li key={node.id}>
           <div
             className={`tree-row${isSelected ? ' selected' : ''}`}
-            style={{ paddingLeft: 8 + depth * INDENT_PX }}
+            style={{ paddingLeft: 4 + depth * INDENT_PX }}
           >
             {hasChildren ? (
               <button
@@ -63,7 +63,7 @@ export function Sidebar({ libraries, selection, onSelect, onOpenFolder }: Sideba
                   : onSelect({ libraryId: library.id, playlistId: node.id })
               }
             >
-              {node.kind === 'folder' ? <FolderIcon size={14} /> : <PlaylistIcon size={14} />}
+              {node.kind === 'folder' ? <FolderIcon size={15} /> : <PlaylistIcon size={15} />}
               <span className="tree-name">{node.name}</span>
               {node.kind === 'playlist' && <span className="tree-count">{node.trackIds.length}</span>}
             </button>
@@ -75,24 +75,31 @@ export function Sidebar({ libraries, selection, onSelect, onOpenFolder }: Sideba
 
   return (
     <aside className="sidebar">
+      {/* On macOS the window buttons sit here, and it is where the window is dragged from. */}
+      <div className="sidebar-top" />
       <nav className="sidebar-scroll">
+        <h2 className="sidebar-heading">Libraries</h2>
+        {libraries.length === 0 && <p className="sidebar-empty">No DJ USB connected</p>}
         {libraries.map((library) => {
           const allSelected = selection?.libraryId === library.id && selection.playlistId === null;
           return (
-            <section key={library.id} className="library">
-              <h2 className="library-title" title={library.volumePath}>
+            <section key={library.id} className={`library source-${library.source}`}>
+              <h3 className="library-title" title={library.volumePath}>
+                <span className="library-icon">
+                  <UsbIcon size={14} />
+                </span>
                 <span className="library-name">{library.volumeName}</span>
-                <span className={`badge badge-${library.source}`}>{SOURCE_LABELS[library.source]}</span>
-              </h2>
+                <span className="badge">{SOURCE_LABELS[library.source]}</span>
+              </h3>
               <ul>
                 <li>
-                  <div className={`tree-row${allSelected ? ' selected' : ''}`} style={{ paddingLeft: 8 }}>
+                  <div className={`tree-row${allSelected ? ' selected' : ''}`} style={{ paddingLeft: 4 }}>
                     <span className="tree-toggle" />
                     <button
                       className="tree-label"
                       onClick={() => onSelect({ libraryId: library.id, playlistId: null })}
                     >
-                      <PlaylistIcon size={14} />
+                      <DiscIcon size={15} />
                       <span className="tree-name">All tracks</span>
                       <span className="tree-count">{library.tracks.length}</span>
                     </button>
@@ -104,9 +111,12 @@ export function Sidebar({ libraries, selection, onSelect, onOpenFolder }: Sideba
           );
         })}
       </nav>
-      <button className="open-folder" onClick={onOpenFolder}>
-        Open folder…
-      </button>
+      <div className="sidebar-footer">
+        <button className="open-folder" onClick={onOpenFolder}>
+          <PlusIcon size={14} />
+          Open folder…
+        </button>
+      </div>
     </aside>
   );
 }

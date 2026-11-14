@@ -39,6 +39,20 @@ The app is Electron with a React UI.
   AIFF files are converted to WAV on the fly (`src/main/aiff.ts`) because
   Chromium cannot play AIFF.
 - `src/renderer/` is the UI: playlist tree, track list and transport bar.
+  Click the Title, Artist or BPM header to sort. In a playlist, drag tracks
+  (or press Alt+↑/↓) to reorder them. Custom orders are saved on this computer
+  only (`useCustomOrders.ts`); the USB is not changed.
+- `src/renderer/src/visualizers/` holds the full-window visualizers, opened
+  from the button next to the volume slider: a live waveform of the audio
+  output, a turntable whose record spins and whose tonearm follows the
+  track's progress, and MilkDrop (via
+  [butterchurn](https://github.com/jberg/butterchurn) and its preset pack,
+  loaded only when that tab opens). The waveform and MilkDrop read the audio
+  through a Web Audio `AnalyserNode` (set up in `usePlayer.ts`); that only
+  works because the `media://` scheme sends CORS headers, see
+  `registerMediaScheme`. Butterchurn compiles preset equations with
+  `new Function` and loads textures from `data:` URLs, which is why the
+  renderer's Content-Security-Policy allows `'unsafe-eval'` and `data:` images.
 
 The USB is only ever read, never written to.
 

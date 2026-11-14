@@ -23,10 +23,17 @@ const MIME_TYPES: Record<string, string> = {
 
 const AIFF_EXTENSIONS = new Set(['.aif', '.aiff']);
 
-/** Must run before the app is ready. `stream` is what lets `<audio>` seek. */
+/**
+ * Must run before the app is ready. `stream` is what lets `<audio>` seek.
+ * `corsEnabled` plus the CORS header on responses let the visualizers read the
+ * audio; without them Web Audio treats it as cross-origin and only sees silence.
+ */
 export function registerMediaScheme(): void {
   protocol.registerSchemesAsPrivileged([
-    { scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, stream: true } },
+    {
+      scheme: MEDIA_SCHEME,
+      privileges: { standard: true, secure: true, stream: true, corsEnabled: true },
+    },
   ]);
 }
 
@@ -54,7 +61,11 @@ export function handleMediaProtocol(libraries: LibraryManager): void {
       });
     }
 
-    const headers = new Headers({ 'Content-Type': source.contentType, 'Accept-Ranges': 'bytes' });
+    const headers = new Headers({
+      'Content-Type': source.contentType,
+      'Accept-Ranges': 'bytes',
+      'Access-Control-Allow-Origin': '*',
+    });
     if (source.size === 0) return new Response(null, { status: 200, headers });
 
     const start = range?.start ?? 0;

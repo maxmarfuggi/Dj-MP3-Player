@@ -1,18 +1,29 @@
 :root {
-  --bg: #14151a;
-  --panel: #1b1d24;
-  --panel-hover: #262933;
-  --border: #2c2f3a;
-  --text: #e8e9ee;
-  --text-dim: #9296a6;
-  --accent: #4f9dff;
-  --rekordbox: #6c8cff;
-  --serato: #3fc28a;
-  --error: #ff7a7a;
+  --bg: #0d0e12;
+  --bg-sidebar: #121318;
+  --surface: #16181e;
+  --hover: rgba(255, 255, 255, 0.055);
+  --pressed: rgba(255, 255, 255, 0.09);
+  --border: rgba(255, 255, 255, 0.075);
+  --text: #f2f3f7;
+  --text-dim: #a3a7b6;
+  --text-faint: #6d7180;
+  --accent: #5c9dff;
+  --accent-soft: rgba(92, 157, 255, 0.15);
+  --rekordbox: #8494ff;
+  --serato: #45c994;
+  --error: #ff8080;
+  /* Height kept clear at the top of the sidebar for the window buttons. */
+  --window-buttons: 12px;
 
   color-scheme: dark;
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+:root[data-platform='mac'] {
+  --window-buttons: 46px;
 }
 
 * {
@@ -47,8 +58,7 @@ button:disabled {
   opacity: 0.4;
 }
 
-button:focus-visible,
-input:focus-visible {
+button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
@@ -61,16 +71,51 @@ ul {
 
 h1,
 h2,
+h3,
 p {
   margin: 0;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.14) content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.26);
 }
 
 .app {
   display: grid;
   grid-template:
     'sidebar content' minmax(0, 1fr)
-    'player player' auto / 270px minmax(0, 1fr);
+    'player player' auto / 264px minmax(0, 1fr);
   height: 100%;
+}
+
+.button {
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-dim);
+  font-weight: 500;
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+
+.button:hover {
+  background: var(--pressed);
+  color: var(--text);
 }
 
 /* Sidebar */
@@ -80,30 +125,69 @@ p {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--panel);
+  background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
+}
+
+.sidebar-top {
+  flex: none;
+  height: var(--window-buttons);
 }
 
 .sidebar-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 0;
+  padding: 0 8px 12px;
+}
+
+.sidebar-heading {
+  padding: 4px 10px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.sidebar-empty {
+  padding: 2px 10px;
+  color: var(--text-faint);
 }
 
 .library + .library {
-  margin-top: 12px;
+  margin-top: 18px;
+}
+
+.source-rekordbox {
+  --source: var(--rekordbox);
+}
+
+.source-serato {
+  --source: var(--serato);
 }
 
 .library-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  font-size: 12px;
+  padding: 4px 10px 8px;
+  font-size: 13px;
   font-weight: 600;
 }
 
+.library-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  color: var(--source);
+  background: color-mix(in srgb, var(--source) 16%, transparent);
+}
+
 .library-name {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -111,36 +195,39 @@ p {
 
 .badge {
   flex: none;
-  padding: 1px 6px;
-  border-radius: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
   font-size: 10px;
   font-weight: 600;
-  color: #10131a;
-}
-
-.badge-rekordbox {
-  background: var(--rekordbox);
-}
-
-.badge-serato {
-  background: var(--serato);
+  letter-spacing: 0.02em;
+  color: var(--source);
+  background: color-mix(in srgb, var(--source) 14%, transparent);
 }
 
 .tree-row {
   display: flex;
   align-items: center;
-  height: 28px;
-  padding-right: 8px;
+  height: 30px;
+  padding-right: 10px;
+  border-radius: 6px;
   color: var(--text-dim);
+  transition:
+    background-color 0.12s,
+    color 0.12s;
 }
 
 .tree-row:hover {
-  background: var(--panel-hover);
+  background: var(--hover);
+  color: var(--text);
 }
 
 .tree-row.selected {
-  background: var(--panel-hover);
+  background: var(--accent-soft);
   color: var(--text);
+}
+
+.tree-row.selected .tree-label svg {
+  color: var(--accent);
 }
 
 .tree-toggle {
@@ -148,9 +235,14 @@ p {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
+  width: 20px;
   height: 100%;
-  transition: transform 0.1s;
+  color: var(--text-faint);
+  transition: transform 0.12s;
+}
+
+.tree-toggle:hover {
+  color: var(--text);
 }
 
 .tree-toggle.expanded {
@@ -161,7 +253,7 @@ p {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   height: 100%;
   text-align: left;
@@ -169,6 +261,7 @@ p {
 
 .tree-label svg {
   flex: none;
+  color: var(--text-faint);
 }
 
 .tree-name {
@@ -182,19 +275,33 @@ p {
   flex: none;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  opacity: 0.7;
+  color: var(--text-faint);
+}
+
+.sidebar-footer {
+  flex: none;
+  padding: 10px;
+  border-top: 1px solid var(--border);
 }
 
 .open-folder {
-  margin: 8px;
-  padding: 7px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  height: 32px;
+  border-radius: 7px;
+  background: var(--hover);
   color: var(--text-dim);
+  font-weight: 500;
+  transition:
+    background-color 0.12s,
+    color 0.12s;
 }
 
 .open-folder:hover {
-  background: var(--panel-hover);
+  background: var(--pressed);
   color: var(--text);
 }
 
@@ -204,48 +311,145 @@ p {
   grid-area: content;
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
 }
 
 .content-header {
+  flex: none;
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 16px 20px 10px;
+  align-items: center;
+  gap: 18px;
+  padding: 28px 28px 20px;
+  /* Tinted with the colour of the list's cover. */
+  background: linear-gradient(hsl(var(--hue) 70% 60% / 0.17), hsl(var(--hue) 70% 60% / 0));
+}
+
+.cover {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 14px;
+  color: rgba(255, 255, 255, 0.94);
+  background: linear-gradient(140deg, hsl(var(--hue) 78% 64%), hsl(calc(var(--hue) + 38) 70% 38%));
+  box-shadow:
+    0 12px 32px hsl(var(--hue) 70% 30% / 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.heading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
 }
 
 .content-header h1 {
   overflow: hidden;
-  font-size: 20px;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .content-meta {
-  flex: none;
+  overflow: hidden;
   color: var(--text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.content-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-play {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #0b0d12;
+  box-shadow: 0 6px 20px rgba(92, 157, 255, 0.35);
+  transition:
+    transform 0.12s,
+    filter 0.12s;
+}
+
+.header-play:hover:not(:disabled) {
+  transform: scale(1.06);
+  filter: brightness(1.1);
+}
+
+.header-play:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.header-play:focus-visible {
+  outline-offset: 3px;
 }
 
 .banner {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 20px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  line-height: 1.4;
   user-select: text;
 }
 
+.banner svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
 .banner-error {
+  border-color: rgba(255, 128, 128, 0.3);
+  background: rgba(255, 128, 128, 0.08);
   color: var(--error);
 }
 
 .banner-dismiss {
   flex: none;
-  width: 20px;
-  font-size: 16px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: -2px;
+  border-radius: 5px;
   color: var(--text-dim);
+}
+
+.banner-dismiss:hover {
+  background: var(--pressed);
+  color: var(--text);
 }
 
 .empty-state {
@@ -254,66 +458,119 @@ p {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
+  padding: 24px;
+  background: radial-gradient(ellipse 50% 40% at 50% 44%, rgba(92, 157, 255, 0.09), transparent);
   color: var(--text-dim);
+  text-align: center;
+}
+
+.empty-icon {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  margin-bottom: 10px;
+  border-radius: 24px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow:
+    inset 0 0 0 1px rgba(92, 157, 255, 0.25),
+    0 12px 40px rgba(92, 157, 255, 0.18);
 }
 
 .empty-state h1 {
-  font-size: 20px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--text);
 }
 
+.empty-state .button {
+  margin-top: 10px;
+}
+
 .empty-list {
-  padding: 20px;
+  padding: 12px 28px;
   color: var(--text-dim);
 }
+
+/* Track list */
 
 .track-list {
   flex: 1;
   overflow-y: auto;
-  padding-bottom: 8px;
+  padding: 0 16px 12px;
 }
 
 .track-row {
   display: grid;
-  grid-template-columns: 44px minmax(0, 2fr) minmax(0, 1.3fr) 56px 52px 56px;
+  grid-template-columns: 32px minmax(0, 2.2fr) minmax(0, 1.5fr) 52px 46px 50px;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   width: 100%;
-  height: 32px;
-  padding: 0 20px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 6px;
   text-align: left;
   /* Lets the browser skip laying out off-screen rows in long libraries. */
   content-visibility: auto;
-  contain-intrinsic-size: auto 32px;
+  contain-intrinsic-size: auto 36px;
+}
+
+button.track-row {
+  cursor: default;
 }
 
 button.track-row:hover {
-  background: var(--panel);
+  background: var(--hover);
 }
 
 .track-header {
   position: sticky;
   top: 0;
   z-index: 1;
-  height: 28px;
-  background: var(--bg);
+  height: 34px;
+  margin-bottom: 6px;
   border-bottom: 1px solid var(--border);
-  color: var(--text-dim);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--text-faint);
   font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
   content-visibility: visible;
 }
 
-.track-number,
+.track-number {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.track-play {
+  display: none;
+  color: var(--text);
+}
+
+button.track-row:hover .track-index {
+  display: none;
+}
+
+button.track-row:hover .track-play {
+  display: flex;
+}
+
 .track-numeric {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-.track-number {
-  color: var(--text-dim);
+.track-key {
+  text-align: center;
 }
 
 .track-text {
@@ -322,12 +579,19 @@ button.track-row:hover {
   white-space: nowrap;
 }
 
+.track-title {
+  font-weight: 500;
+}
+
 .track-secondary {
   color: var(--text-dim);
 }
 
-.track-row.current,
-.track-row.current .track-number {
+.track-row.current {
+  background: var(--accent-soft);
+}
+
+.track-row.current .track-title {
   color: var(--accent);
 }
 
@@ -335,23 +599,120 @@ button.track-row:hover {
   opacity: 0.4;
 }
 
+.playing-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.playing-bars i {
+  width: 2.5px;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--accent);
+  transform-origin: bottom;
+  animation: playing-bar 0.9s ease-in-out infinite alternate;
+}
+
+.playing-bars i:nth-child(2) {
+  animation-delay: -0.45s;
+}
+
+.playing-bars i:nth-child(3) {
+  animation-delay: -0.2s;
+}
+
+.track-list.paused .playing-bars i {
+  animation-play-state: paused;
+}
+
+@keyframes playing-bar {
+  from {
+    transform: scaleY(0.25);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.key-tag {
+  display: inline-block;
+  min-width: 36px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* Keys that mix well sit next to each other on the colour wheel. */
+.key-tag-colored {
+  background: hsl(var(--key-hue) 80% 60% / 0.14);
+  color: hsl(var(--key-hue) 85% 75%);
+}
+
+.sort-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  color: var(--text-faint);
+  transition: color 0.12s;
+}
+
+.sort-header.track-numeric {
+  justify-content: flex-end;
+}
+
+.sort-header:hover {
+  color: var(--text);
+}
+
+.sort-header.active {
+  color: var(--accent);
+}
+
+.track-row.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.track-row.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
 /* Player bar */
 
 .player-bar {
   grid-area: player;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr);
   align-items: center;
-  gap: 20px;
-  padding: 10px 20px;
-  background: var(--panel);
+  gap: 24px;
+  height: 84px;
+  padding: 0 20px;
+  background: var(--surface);
   border-top: 1px solid var(--border);
 }
 
 .now-playing {
   display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.now-text {
+  display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -370,33 +731,123 @@ button.track-row:hover {
   color: var(--text-dim);
 }
 
+.now-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 6px;
+}
+
+.now-bpm {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.now-bpm small {
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+/* A small record in the current track's label colour, turning while it plays. */
+.mini-record {
+  position: relative;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: repeating-radial-gradient(circle, #0c0c0e 0 1.5px, #1b1b1f 1.5px 3px);
+  box-shadow:
+    0 3px 10px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+/* The light on the record stays put while the label turns. */
+.mini-record::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 295deg,
+    transparent 0 5%,
+    rgba(255, 255, 255, 0.24) 11%,
+    transparent 17% 55%,
+    rgba(255, 255, 255, 0.17) 61%,
+    transparent 67%
+  );
+  mask-image: radial-gradient(circle, transparent 40%, #000 42%);
+}
+
+.mini-record-label {
+  position: absolute;
+  inset: 31%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, #08080a 0 15%, transparent 17%),
+    conic-gradient(rgba(255, 255, 255, 0.4) 0 14%, transparent 14% 50%, rgba(0, 0, 0, 0.2) 50% 64%, transparent 64%),
+    var(--label);
+  /* One turn takes 1.8 seconds at 33⅓ RPM. */
+  animation: spin 1.8s linear infinite paused;
+}
+
+.mini-record.spinning .mini-record-label {
+  animation-play-state: running;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .transport {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .transport-buttons {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
 }
 
 .transport-buttons button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
+  color: var(--text-dim);
+  transition:
+    background-color 0.12s,
+    color 0.12s,
+    transform 0.12s;
 }
 
-.transport-buttons .play-button {
-  width: 34px;
-  height: 34px;
+.transport-buttons button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.transport-buttons button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.transport-buttons .play-button,
+.transport-buttons .play-button:hover:not(:disabled) {
+  width: 36px;
+  height: 36px;
   background: var(--text);
   color: var(--bg);
+}
+
+.transport-buttons .play-button:hover:not(:disabled) {
+  transform: scale(1.06);
 }
 
 .seek {
@@ -404,11 +855,7 @@ button.track-row:hover {
   align-items: center;
   gap: 10px;
   width: 100%;
-}
-
-.seek input {
-  flex: 1;
-  min-width: 0;
+  max-width: 620px;
 }
 
 .time {
@@ -420,20 +867,506 @@ button.track-row:hover {
   text-align: center;
 }
 
-.volume {
+.player-extras {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 16px;
+  min-width: 0;
+}
+
+.volume {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  width: 124px;
   color: var(--text-dim);
 }
 
-.volume input {
-  width: 100px;
+.volume svg {
+  flex: none;
 }
 
-input[type='range'] {
-  height: 14px;
+.slider {
+  --slider-fill: var(--text);
+
+  flex: 1;
+  appearance: none;
+  min-width: 0;
+  height: 16px;
   margin: 0;
-  accent-color: var(--accent);
+  background: none;
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--slider-fill) var(--filled),
+    rgba(255, 255, 255, 0.16) var(--filled)
+  );
+}
+
+/* The handle only shows while the slider is in use, to keep the bar calm. */
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.slider:hover:not(:disabled),
+.slider:focus-visible {
+  --slider-fill: var(--accent);
+}
+
+.slider:hover:not(:disabled)::-webkit-slider-thumb,
+.slider:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+}
+
+.slider:focus-visible {
+  outline: none;
+}
+
+.slider:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.5),
+    0 0 0 4px var(--accent-soft);
+}
+
+.slider:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Smaller windows */
+
+@media (max-width: 1100px) {
+  .now-meta {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .app {
+    grid-template-columns: 224px minmax(0, 1fr);
+  }
+
+  .volume {
+    width: 96px;
+  }
+}
+
+@media (max-width: 900px), (max-height: 600px) {
+  .content-header {
+    gap: 14px;
+    padding: 20px 28px 14px;
+  }
+
+  .cover {
+    width: 56px;
+    height: 56px;
+    border-radius: 11px;
+  }
+
+  .content-header h1 {
+    font-size: 22px;
+  }
+}
+
+/* macOS: the window has no title bar, so these areas drag it instead. */
+
+:root[data-platform='mac'] :is(.sidebar-top, .content-header) {
+  -webkit-app-region: drag;
+}
+
+:root[data-platform='mac'] .content-header button {
+  -webkit-app-region: no-drag;
+}
+
+/* Keeps the drag areas underneath from swallowing clicks on the visualizer. */
+:root[data-platform='mac'] .visualizer {
+  -webkit-app-region: no-drag;
+}
+
+/* A strip along the top edge still drags the window while the visualizer is open. */
+:root[data-platform='mac'] .visualizer:not(:fullscreen)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 14px;
+  -webkit-app-region: drag;
+}
+
+/* Room for the window buttons, which full screen hides. */
+:root[data-platform='mac'] .visualizer:not(:fullscreen) .visualizer-top {
+  padding-left: 96px;
+}
+
+/* Visualizers */
+
+.visualizer-button {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(90deg, #4f9dff, #a66bff, #ff5fa2);
+  box-shadow: 0 0 12px rgba(166, 107, 255, 0.35);
+  transition:
+    box-shadow 0.15s,
+    filter 0.15s;
+}
+
+.visualizer-button:hover {
+  filter: brightness(1.12);
+  box-shadow: 0 0 18px rgba(166, 107, 255, 0.6);
+}
+
+.visualizer-button rect {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.visualizer-button.playing rect {
+  animation: visualizer-bar 0.9s ease-in-out infinite alternate;
+}
+
+.visualizer-button.playing rect:nth-child(2) {
+  animation-delay: -0.3s;
+}
+
+.visualizer-button.playing rect:nth-child(3) {
+  animation-delay: -0.6s;
+}
+
+.visualizer-button.playing rect:nth-child(4) {
+  animation-delay: -0.15s;
+}
+
+.visualizer-button.playing rect:nth-child(5) {
+  animation-delay: -0.45s;
+}
+
+@keyframes visualizer-bar {
+  from {
+    transform: scaleY(0.5);
+  }
+  to {
+    transform: scaleY(1.3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visualizer-button.playing rect,
+  .playing-bars i,
+  .mini-record-label {
+    animation: none;
+  }
+}
+
+/* The visualizer covers the whole window; skip drawing and animating what is under it. */
+.visualizer-open > :not(.visualizer) {
+  content-visibility: hidden;
+}
+
+.visualizer {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: #0b0c10;
+}
+
+.visualizer.controls-hidden {
+  cursor: none;
+}
+
+.visualizer-canvas,
+.turntable {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.visualizer-top,
+.visualizer-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  transition: opacity 0.3s;
+}
+
+.visualizer-top {
+  top: 0;
+  background: linear-gradient(rgba(0, 0, 0, 0.55), transparent);
+}
+
+.visualizer-bottom {
+  bottom: 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
+}
+
+.visualizer .transport-buttons button {
+  color: var(--text);
+}
+
+.visualizer .transport-buttons .play-button {
+  color: var(--bg);
+}
+
+.visualizer-message {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 15px;
+}
+
+/* Between the mode tabs and the window buttons; visualizers put their own controls here. */
+.visualizer-top-slot {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.milkdrop-presets {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: min(100%, 480px);
+  min-width: 0;
+  padding: 3px;
+  border-radius: 8px;
+  background: rgba(20, 21, 26, 0.6);
+}
+
+.milkdrop-presets button {
+  flex: none;
+  padding: 2px 10px;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text);
+}
+
+.milkdrop-presets button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.milkdrop-preset-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: #b4b8c6;
+}
+
+.controls-hidden .visualizer-top,
+.controls-hidden .visualizer-bottom {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.visualizer-modes {
+  flex: none;
+  display: flex;
+  padding: 3px;
+  background: rgba(20, 21, 26, 0.6);
+  border-radius: 8px;
+}
+
+.visualizer-modes button {
+  padding: 5px 14px;
+  border-radius: 6px;
+  color: #b4b8c6;
+}
+
+.visualizer-modes button.active {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+}
+
+.visualizer-window-buttons {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+
+.visualizer-window-buttons button {
+  min-width: 32px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  background: rgba(20, 21, 26, 0.6);
+  font-size: 13px;
+}
+
+.visualizer-window-buttons button:last-child {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.visualizer-track {
+  flex: 0 1 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.visualizer-seek {
+  flex: 1;
+  max-width: 760px;
+  min-width: 160px;
+}
+
+.visualizer-seek .time {
+  color: #c4c8d4;
+}
+
+.visualizer-bottom .transport-buttons {
+  flex: none;
+}
+
+/* Turntable */
+
+.turntable {
+  display: grid;
+  place-items: center;
+  padding: 5vmin;
+  /* Lets the deck size itself to fit, whichever of width and height is tighter. */
+  container-type: size;
+  background: radial-gradient(ellipse 70% 62% at 42% 42%, #1c1e27, transparent 78%);
+}
+
+.turntable-stage {
+  /* The deck is drawn 1000 × 760; this is the size of one of those units. */
+  --unit: calc(min(100cqw, 100cqh * 1000 / 760) / 1000);
+
+  position: relative;
+  width: calc(var(--unit) * 1000);
+  height: calc(var(--unit) * 760);
+}
+
+.turntable-layer,
+.turntable-arm {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.turntable-record,
+.turntable-sheen {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Turned by the compositor alone; nothing is redrawn while the record spins. */
+.turntable-record {
+  will-change: transform;
+}
+
+/*
+ * Light catches a record's grooves as two streaks pointing at the lamp, here
+ * up and to the left, with a little colour at their edges.
+ */
+.turntable-sheen {
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 255, 255, 0.03) 0deg,
+    rgba(255, 255, 255, 0.02) 96deg,
+    rgba(255, 214, 190, 0.09) 114deg,
+    rgba(255, 255, 255, 0.26) 127deg,
+    rgba(255, 255, 255, 0.36) 135deg,
+    rgba(255, 255, 255, 0.24) 144deg,
+    rgba(190, 214, 255, 0.09) 157deg,
+    rgba(255, 255, 255, 0.02) 176deg,
+    rgba(255, 255, 255, 0.02) 272deg,
+    rgba(190, 214, 255, 0.1) 291deg,
+    rgba(255, 255, 255, 0.32) 306deg,
+    rgba(255, 255, 255, 0.46) 315deg,
+    rgba(255, 255, 255, 0.3) 323deg,
+    rgba(255, 214, 190, 0.1) 337deg,
+    rgba(255, 255, 255, 0.03) 360deg
+  );
+}
+
+.turntable-arm {
+  transform-origin: var(--pivot);
+  transition: rotate 0.6s ease-out;
+  will-change: rotate;
+}
+
+/* A blurred black copy of the arm, offset away from the lamp. */
+.turntable-arm-shadow {
+  translate: 1.1% 2.4%;
+  filter: brightness(0) blur(calc(var(--unit) * 4));
+  opacity: 0.6;
+}
+
+.turntable-label-title,
+.turntable-label-artist,
+.turntable-label-rpm,
+.turntable-label-small {
+  text-anchor: middle;
+  fill: #15161b;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.turntable-label-title {
+  font-weight: 700;
+}
+
+.turntable-label-rpm {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  opacity: 0.7;
+}
+
+.turntable-label-small {
+  font-size: 6.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  opacity: 0.55;
+}
+
+/* Lettering printed on the deck. */
+.turntable-print {
+  text-anchor: middle;
+  fill: #8f93a0;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+
+.turntable-lamp {
+  transition: opacity 0.4s;
 }
