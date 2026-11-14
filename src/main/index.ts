@@ -1,0 +1,74 @@
+import path from 'node:path';
+import { BrowserWindow, app, dialog, ipcMain } from 'electron';
+import type { LibraryState, OpenFolderResult } from '../shared/types';
+import { IPC } from '../shared/ipc';
+import { LibraryManager } from './libraryManager';
+import { handleMediaProtocol, registerMediaScheme } from './mediaProtocol';
+
+registerMediaScheme();
+
+let mainWindow: BrowserWindow | null = null;
+
+const libraries = new LibraryManager((state: LibraryState) => {
+  mainWindow?.webContents.send(IPC.stateChanged, state);
+});
+
+function createWindow(): BrowserWindow {
+  const window = new BrowserWindow({
+    width: 1100,
+    height: 720,
+    minWidth: 760,
+    minHeight: 480,
+    backgroundColor: '#14151a',
+    title: 'DJ MP3 Player',
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      sandbox: true,
+    },
+  });
+
+  // The UI is a single page. Without this, dropping a file on the window would
+  // navigate away from it. Reloads (same URL) stay allowed for development.
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (event, url) => {
+    if (url !== window.webContents.getURL()) event.preventDefault();
+  });
+
+  // electron-vite sets this to the dev server's URL when running `npm run dev`.
+  const devServerUrl = process.env.ELECTRON_RENDERER_URL;
+  if (!app.isPackaged && devServerUrl) {
+    void window.loadURL(devServerUrl);
+  } else {
+    void window.loadFile(path.join(__dirname, '../renderer/index.html'));
+  }
+  window.on('closed', () => {
+    mainWindow = null;
+  });
+  return window;
+}
+
+async function openFolder(): Promise<OpenFolderResult> {
+  if (!mainWindow) return { status: 'cancelled' };
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Open a DJ USB or a copy of one',
+    properties: ['openDirectory'],
+  });
+  const folderPath = filePaths[0];
+  if (canceled || folderPath === undefined) return { status: 'cancelled' };
+  return (await libraries.addFolder(folderPath))
+    ? { status: 'opened' }
+    : { status: 'no-library', folderPath };
+}
+
+void app.whenReady().then(() => {
+  handleMediaProtocol(libraries);
+  ipcMain.handle(IPC.getState, () => libraries.getState());
+  ipcMain.handle(IPC.openFolder, openFolder);
+  mainWindow = createWindow();
+  libraries.start();
+});
+
+app.on('window-all-closed', () => {
+  libraries.stop();
+  app.quit();
+});
