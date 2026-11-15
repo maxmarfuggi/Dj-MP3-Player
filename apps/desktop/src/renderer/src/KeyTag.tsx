@@ -1,5 +1,5 @@
 import { type CSSProperties, memo } from 'react';
-import { keyHue } from './keyColor';
+import { keyHue } from '../../logic/keyColor';
 
 /** A track's musical key, tinted with its Camelot wheel colour when it is a known key. */
 export const KeyTag = memo(function KeyTag({ musicalKey }: { musicalKey: string }) {

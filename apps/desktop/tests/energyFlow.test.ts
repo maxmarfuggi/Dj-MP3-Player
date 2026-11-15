@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { bpmGrid, classifyHarmonic, energyFlow, matchTempo } from '../src/renderer/src/energyFlow';
-import { camelotKey } from '../src/renderer/src/keyColor';
+import { bpmGrid, classifyHarmonic, energyFlow, matchTempo } from '../src/logic/energyFlow';
+import { camelotKey } from '../src/logic/keyColor';
 
 const kind = (from: string, to: string) => classifyHarmonic(camelotKey(from)!, camelotKey(to)!).kind;
 

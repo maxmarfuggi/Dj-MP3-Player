@@ -20,10 +20,6 @@ function load(): CustomOrders {
   }
 }
 
-export function orderKey(libraryId: string, playlistId: string): string {
-  return `${libraryId}/${playlistId}`;
-}
-
 export function useCustomOrders() {
   const [orders, setOrders] = useState<CustomOrders>(load);
 

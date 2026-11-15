@@ -72,14 +72,5 @@ export interface DjUsbApi {
   openFolder(): Promise<OpenFolderResult>;
 }
 
+/** Scheme the UI uses to ask the main process for a track or its artwork. */
 export const MEDIA_SCHEME = 'media';
-
-/** URL the renderer hands to `<audio>`; resolved to a file by the main process. */
-export function trackUrl(libraryId: string, trackId: string): string {
-  return `${MEDIA_SCHEME}://track/${encodeURIComponent(libraryId)}/${encodeURIComponent(trackId)}`;
-}
-
-/** URL of a track's artwork, for tracks that have an `artworkPath`. */
-export function artworkUrl(libraryId: string, trackId: string): string {
-  return `${MEDIA_SCHEME}://artwork/${encodeURIComponent(libraryId)}/${encodeURIComponent(trackId)}`;
-}

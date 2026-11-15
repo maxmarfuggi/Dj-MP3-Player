@@ -85,7 +85,7 @@ port has an exact reference. Nothing changes for users.
   - Switch the TypeScript tests to compare against `expected.json`.
   - *Done when:* every reader is checked against fixture files.
 
-- [ ] **0.3 Data contract** · 1 day · after 0.2
+- [x] **0.3 Data contract** · 1 day · after 0.2
   - Write `docs/contract.md`: what each field in `src/shared/types.ts`
     means, and the exact ID rules (`libraryId` is `<source>-` plus the first
     12 hex characters of the SHA-1 of the volume path; how each reader builds
@@ -95,7 +95,7 @@ port has an exact reference. Nothing changes for users.
   - *Done when:* someone could write a compatible reader from the document
     and the fixtures alone.
 
-- [ ] **0.4 Separate Electron from media serving** · 0.5–1 day · after 0.1
+- [x] **0.4 Separate Electron from media serving** · 0.5–1 day · after 0.1
   - Split `src/main/mediaProtocol.ts` into a `mediaService` with no Electron
     import (resolving, file types, ranges, AIFF to WAV, the NFC/NFD retry),
     returning `{ status, headers, body }`, and a thin Electron protocol
@@ -103,7 +103,7 @@ port has an exact reference. Nothing changes for users.
   - *Done when:* nothing outside the thin handler and `index.ts` imports
     `electron` in the main process.
 
-- [ ] **0.5 Move shared logic out of the UI folder** · 1–2 days · after 0.1
+- [x] **0.5 Move shared logic out of the UI folder** · 1–2 days · after 0.1
   - Move `trackOrder.ts`, `keyColor.ts`, `energyFlow.ts` and `format.ts` to
     a `logic/` folder.
   - Pull the logic out of `App.tsx` into pure, tested functions in
@@ -112,13 +112,13 @@ port has an exact reference. Nothing changes for users.
   - *Done when:* `App.tsx` only wires state to components, and the moved
     logic has tests.
 
-- [ ] **0.6 One back-end client in the UI** · 0.5 day · after 0.1
+- [x] **0.6 One back-end client in the UI** · 0.5 day · after 0.1
   - Add `renderer/src/backend.ts` with `getState`, `onStateChanged`,
     `openFolder`, `trackUrl` and `artworkUrl`. Move `trackUrl` and
     `artworkUrl` out of `shared/types.ts`.
   - *Done when:* nothing else in the UI uses `window.djusb` or `media://`.
 
-- [ ] **0.7 Settings format** · 0.5 day · after 0.3
+- [x] **0.7 Settings format** · 0.5 day · after 0.3
   - Define the stored format for custom playlist orders and other settings
     in `docs/contract.md`, so the device can save the same thing to a file.
 

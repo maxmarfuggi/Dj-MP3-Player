@@ -1,8 +1,8 @@
 import { type CSSProperties, type PointerEvent, memo, useCallback, useId, useMemo, useState } from 'react';
-import { type HarmonicKind, bpmGrid, energyFlow } from './energyFlow';
-import { formatBpm } from './format';
-import { camelotHue } from './keyColor';
-import type { TrackEntry } from './trackOrder';
+import { type HarmonicKind, bpmGrid, energyFlow } from '../../logic/energyFlow';
+import { formatBpm } from '../../logic/format';
+import { camelotHue } from '../../logic/keyColor';
+import type { TrackEntry } from '../../logic/trackOrder';
 
 interface EnergyFlowChartProps {
   entries: TrackEntry[];

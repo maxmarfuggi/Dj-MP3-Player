@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { formatTime } from '../format';
+import { formatTime } from '../../../logic/format';
 import { NextIcon, PauseIcon, PlayIcon, PreviousIcon } from '../icons';
 import { Slider } from '../Slider';
 import type { Player } from '../usePlayer';

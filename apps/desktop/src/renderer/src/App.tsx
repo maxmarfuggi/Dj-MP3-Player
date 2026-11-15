@@ -1,24 +1,26 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useState } from 'react';
-import type { LibraryState, PlaylistNode } from '../../shared/types';
+import { formatTotalTime } from '../../logic/format';
+import {
+  currentEntryIndex,
+  libraryWasRemoved,
+  listEntries,
+  listViewKey,
+  orderKey,
+  queueFromEntries,
+  visibleLibrary,
+  visiblePlaylist,
+} from '../../logic/libraryView';
+import { type SortColumn, type SortState, moveItem, nextSort } from '../../logic/trackOrder';
+import type { LibraryState } from '../../shared/types';
 import { coverHue } from './colors';
-import { formatTotalTime } from './format';
 import { CloseIcon, DiscIcon, PauseIcon, PlayIcon, PlaylistIcon, UsbIcon, WarningIcon } from './icons';
 import { EnergyFlowChart } from './EnergyFlowChart';
 import { PlayerBar } from './PlayerBar';
 import { SOURCE_LABELS, type Selection, Sidebar } from './Sidebar';
 import { TrackList } from './TrackList';
-import {
-  type SortColumn,
-  type SortState,
-  moveItem,
-  nextSort,
-  reconcileOrder,
-  sortByTitle,
-  sortEntries,
-  toEntries,
-} from './trackOrder';
-import { orderKey, useCustomOrders } from './useCustomOrders';
-import { type QueueItem, usePlayer } from './usePlayer';
+import { getState, onStateChanged, openFolder as chooseFolder } from './backend';
+import { useCustomOrders } from './useCustomOrders';
+import { usePlayer } from './usePlayer';
 import { VisualizerOverlay } from './visualizers/VisualizerOverlay';
 
 const ENERGY_FLOW_STORAGE_KEY = 'energyFlowOpen';
@@ -26,19 +28,11 @@ const ENERGY_FLOW_STORAGE_KEY = 'energyFlowOpen';
 function useLibraryState(): LibraryState {
   const [state, setState] = useState<LibraryState>({ libraries: [], errors: [] });
   useEffect(() => {
-    const unsubscribe = window.djusb.onStateChanged(setState);
-    void window.djusb.getState().then(setState);
+    const unsubscribe = onStateChanged(setState);
+    void getState().then(setState);
     return unsubscribe;
   }, []);
   return state;
-}
-
-function findPlaylist(nodes: PlaylistNode[], id: string): PlaylistNode | undefined {
-  for (const node of nodes) {
-    const found = node.id === id ? node : findPlaylist(node.children, id);
-    if (found) return found;
-  }
-  return undefined;
 }
 
 export function App() {
@@ -58,44 +52,23 @@ export function App() {
     setEnergyFlowOpen(!energyFlowOpen);
   };
 
-  // Fall back to the first library when nothing is selected or the selected USB was removed.
-  const library = libraries.find((candidate) => candidate.id === selection?.libraryId) ?? libraries[0];
-  const playlist =
-    library && selection?.libraryId === library.id && selection.playlistId !== null
-      ? findPlaylist(library.playlists, selection.playlistId)
-      : undefined;
+  const library = visibleLibrary(libraries, selection?.libraryId);
+  const playlist = visiblePlaylist(library, selection);
 
   const customOrderKey = library && playlist ? orderKey(library.id, playlist.id) : null;
   const customOrder = customOrderKey === null ? undefined : orders[customOrderKey];
-  const viewKey = customOrderKey ?? `${library?.id}:all`;
+  const viewKey = listViewKey(library, playlist);
 
-  const entries = useMemo(() => {
-    if (!library) return [];
-    let tracks;
-    if (playlist) {
-      const tracksById = new Map(library.tracks.map((track) => [track.id, track]));
-      const trackIds = customOrder ? reconcileOrder(customOrder, playlist.trackIds) : playlist.trackIds;
-      tracks = trackIds.flatMap((id) => tracksById.get(id) ?? []);
-    } else {
-      tracks = sortByTitle(library.tracks);
-    }
-    const listed = toEntries(tracks);
-    return sort ? sortEntries(listed, sort) : listed;
-  }, [library, playlist, customOrder, sort]);
-
-  const libraryId = library?.id;
-  const queue = useMemo<QueueItem[]>(
-    () =>
-      libraryId === undefined
-        ? []
-        : entries.map((entry) => ({ libraryId, track: entry.track, entryKey: entry.key })),
-    [libraryId, entries],
+  const entries = useMemo(
+    () => listEntries(library, playlist, customOrder, sort),
+    [library, playlist, customOrder, sort],
   );
+  const queue = useMemo(() => queueFromEntries(library?.id, entries), [library?.id, entries]);
 
   const { reorderQueue } = player;
   useEffect(() => {
-    if (libraryId !== undefined) reorderQueue(queue, viewKey);
-  }, [libraryId, queue, viewKey, reorderQueue]);
+    if (library !== undefined) reorderQueue(queue, viewKey);
+  }, [library, queue, viewKey, reorderQueue]);
 
   const totalSeconds = useMemo(
     () => entries.reduce((total, entry) => total + (entry.track.durationSec ?? 0), 0),
@@ -113,12 +86,9 @@ export function App() {
   const playFrom = useCallback((index: number) => play(queue, index, viewKey), [play, queue, viewKey]);
   const playingEntryKey = playingThisList ? player.current?.entryKey : undefined;
   // A track playing from another list of the same library is still marked.
-  const playingTrackId = player.current?.libraryId === libraryId ? player.current?.track.id : undefined;
+  const playingTrackId = player.current?.libraryId === library?.id ? player.current?.track.id : undefined;
   const currentIndex = useMemo(
-    () =>
-      playingEntryKey !== undefined
-        ? entries.findIndex((entry) => entry.key === playingEntryKey)
-        : entries.findIndex((entry) => entry.track.id === playingTrackId),
+    () => currentEntryIndex(entries, playingEntryKey, playingTrackId),
     [entries, playingEntryKey, playingTrackId],
   );
 
@@ -144,7 +114,7 @@ export function App() {
   const { current, stop, togglePlay } = player;
   useEffect(() => {
     // The USB that the current track lives on was unplugged.
-    if (current && !libraries.some((candidate) => candidate.id === current.libraryId)) stop();
+    if (libraryWasRemoved(libraries, current?.libraryId)) stop();
   }, [libraries, current, stop]);
 
   useEffect(() => {
@@ -161,7 +131,7 @@ export function App() {
   }, [togglePlay]);
 
   const openFolder = async () => {
-    const result = await window.djusb.openFolder();
+    const result = await chooseFolder();
     setNotice(
       result.status === 'no-library'
         ? `No rekordbox or Serato library found in ${result.folderPath}`

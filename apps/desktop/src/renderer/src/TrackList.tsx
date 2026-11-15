@@ -1,8 +1,8 @@
 import { type CSSProperties, type DragEvent, type KeyboardEvent, memo, useRef, useState } from 'react';
-import { formatBpm, formatTime } from './format';
+import { formatBpm, formatTime } from '../../logic/format';
+import type { SortColumn, SortState, TrackEntry } from '../../logic/trackOrder';
 import { PlayIcon, SortArrowIcon } from './icons';
 import { KeyTag } from './KeyTag';
-import type { SortColumn, SortState, TrackEntry } from './trackOrder';
 import { type Player, type QueueItem, queueItemKey } from './usePlayer';
 
 interface TrackListProps extends Pick<Player, 'current' | 'currentSource' | 'isPlaying' | 'failed' | 'play'> {

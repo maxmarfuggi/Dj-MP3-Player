@@ -1,7 +1,7 @@
 import { type CSSProperties, useState } from 'react';
-import { artworkUrl } from '../../shared/types';
+import { formatBpm, formatTime } from '../../logic/format';
+import { artworkUrl } from './backend';
 import { labelColor } from './colors';
-import { formatBpm, formatTime } from './format';
 import { NextIcon, PauseIcon, PlayIcon, PreviousIcon, VisualizerIcon, VolumeIcon } from './icons';
 import { KeyTag } from './KeyTag';
 import { Slider } from './Slider';

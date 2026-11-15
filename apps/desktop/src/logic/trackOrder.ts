@@ -1,4 +1,4 @@
-import type { Track } from '../../shared/types';
+import type { Track } from '../shared/types';
 
 export type SortColumn = 'title' | 'artist' | 'genre' | 'label' | 'bpm';
 

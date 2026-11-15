@@ -5,7 +5,7 @@ import {
   reconcileOrder,
   sortEntries,
   toEntries,
-} from '../src/renderer/src/trackOrder';
+} from '../src/logic/trackOrder';
 import type { Track } from '../src/shared/types';
 
 function track(id: string, fields: Partial<Track> = {}): Track {

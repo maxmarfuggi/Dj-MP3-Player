@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { type Track, trackUrl } from '../../shared/types';
+import type { Track } from '../../shared/types';
+import { trackUrl } from './backend';
 
 export interface QueueItem {
   libraryId: string;
