@@ -3,6 +3,7 @@ import type { LibraryState, PlaylistNode } from '../../shared/types';
 import { coverHue } from './colors';
 import { formatTotalTime } from './format';
 import { CloseIcon, DiscIcon, PauseIcon, PlayIcon, PlaylistIcon, UsbIcon, WarningIcon } from './icons';
+import { EnergyFlowChart } from './EnergyFlowChart';
 import { PlayerBar } from './PlayerBar';
 import { SOURCE_LABELS, type Selection, Sidebar } from './Sidebar';
 import { TrackList } from './TrackList';
@@ -19,6 +20,8 @@ import {
 import { orderKey, useCustomOrders } from './useCustomOrders';
 import { type QueueItem, usePlayer } from './usePlayer';
 import { VisualizerOverlay } from './visualizers/VisualizerOverlay';
+
+const ENERGY_FLOW_STORAGE_KEY = 'energyFlowOpen';
 
 function useLibraryState(): LibraryState {
   const [state, setState] = useState<LibraryState>({ libraries: [], errors: [] });
@@ -47,6 +50,13 @@ export function App() {
   const [visualizerOpen, setVisualizerOpen] = useState(false);
   const closeVisualizer = useCallback(() => setVisualizerOpen(false), []);
   const { orders, saveOrder, resetOrder } = useCustomOrders();
+  const [energyFlowOpen, setEnergyFlowOpen] = useState(
+    () => localStorage.getItem(ENERGY_FLOW_STORAGE_KEY) === 'true',
+  );
+  const toggleEnergyFlow = () => {
+    localStorage.setItem(ENERGY_FLOW_STORAGE_KEY, String(!energyFlowOpen));
+    setEnergyFlowOpen(!energyFlowOpen);
+  };
 
   // Fall back to the first library when nothing is selected or the selected USB was removed.
   const library = libraries.find((candidate) => candidate.id === selection?.libraryId) ?? libraries[0];
@@ -98,6 +108,19 @@ export function App() {
     if (playingThisList) player.togglePlay();
     else player.play(queue, 0, viewKey);
   };
+
+  const { play } = player;
+  const playFrom = useCallback((index: number) => play(queue, index, viewKey), [play, queue, viewKey]);
+  const playingEntryKey = playingThisList ? player.current?.entryKey : undefined;
+  // A track playing from another list of the same library is still marked.
+  const playingTrackId = player.current?.libraryId === libraryId ? player.current?.track.id : undefined;
+  const currentIndex = useMemo(
+    () =>
+      playingEntryKey !== undefined
+        ? entries.findIndex((entry) => entry.key === playingEntryKey)
+        : entries.findIndex((entry) => entry.track.id === playingTrackId),
+    [entries, playingEntryKey, playingTrackId],
+  );
 
   // Dragging only makes sense in a playlist shown in its own order, not a sorted view.
   const canReorder = customOrderKey !== null && sort === null;
@@ -195,6 +218,16 @@ export function App() {
                 </span>
               </div>
               <div className="content-actions">
+                {playlist && (
+                  <button
+                    className={`button${energyFlowOpen ? ' active' : ''}`}
+                    aria-pressed={energyFlowOpen}
+                    title="Chart the tempo and keys of this list in its current order"
+                    onClick={toggleEnergyFlow}
+                  >
+                    {energyFlowOpen ? 'Hide energy flow' : 'Show energy flow'}
+                  </button>
+                )}
                 {customOrderKey !== null && sort !== null && (
                   <button
                     className="button"
@@ -223,6 +256,14 @@ export function App() {
                 </button>
               </div>
             </header>
+            {playlist && energyFlowOpen && (
+              <EnergyFlowChart
+                entries={entries}
+                currentIndex={currentIndex}
+                isPlaying={player.isPlaying}
+                onPlay={playFrom}
+              />
+            )}
             <TrackList
               libraryId={library.id}
               viewKey={viewKey}

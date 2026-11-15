@@ -500,6 +500,308 @@ p {
   color: var(--text-dim);
 }
 
+/* Energy flow */
+
+.energy-flow {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  margin: 0 16px 12px;
+  padding: 10px 14px 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background:
+    radial-gradient(ellipse 60% 120% at 0% 0%, rgba(92, 157, 255, 0.06), transparent),
+    linear-gradient(rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.energy-flow-empty {
+  padding: 12px 14px;
+  color: var(--text-dim);
+}
+
+.energy-flow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.energy-flow-title {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.button.active {
+  border-color: rgba(166, 107, 255, 0.4);
+  background: linear-gradient(90deg, rgba(79, 157, 255, 0.16), rgba(166, 107, 255, 0.16), rgba(255, 95, 162, 0.16));
+  color: var(--text);
+}
+
+.energy-flow-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.energy-flow-kind-smooth {
+  --kind: #45d6a0;
+}
+
+.energy-flow-kind-shift {
+  --kind: #ffb547;
+}
+
+.energy-flow-kind-clash {
+  --kind: #ff6b81;
+}
+
+.energy-flow-kind-tempo {
+  --kind: #5cc8ff;
+}
+
+.energy-flow-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.energy-flow-stat b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.energy-flow-stat i,
+.energy-flow-tooltip-mix i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--kind);
+  box-shadow: 0 0 8px var(--kind);
+}
+
+/* Tempo jumps are diamonds on the chart, so they are here too. */
+.energy-flow-kind-tempo i {
+  border-radius: 1px;
+  transform: rotate(45deg) scale(0.9);
+}
+
+.energy-flow-score {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(79, 157, 255, 0.16), rgba(166, 107, 255, 0.16), rgba(255, 95, 162, 0.16));
+  box-shadow: inset 0 0 0 1px rgba(166, 107, 255, 0.22);
+  color: var(--text-dim);
+}
+
+.energy-flow-score b {
+  color: var(--text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.energy-flow-chart {
+  position: relative;
+  height: 140px;
+  margin-top: 4px;
+}
+
+.energy-flow-chart svg {
+  display: block;
+  overflow: visible;
+  cursor: pointer;
+}
+
+.energy-flow-grid line {
+  stroke: rgba(255, 255, 255, 0.055);
+  stroke-dasharray: 2 4;
+}
+
+.energy-flow-grid text {
+  fill: var(--text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-anchor: end;
+  dominant-baseline: central;
+}
+
+.energy-flow-glow {
+  fill: none;
+  stroke-width: 5;
+  opacity: 0.5;
+}
+
+.energy-flow-line {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.energy-flow-line-clash {
+  stroke-width: 2;
+  stroke-dasharray: 2 5;
+}
+
+.energy-flow-line-bridge {
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 1.5;
+  stroke-dasharray: 1 5;
+}
+
+.energy-flow-line-unrated {
+  stroke-opacity: 0.55;
+}
+
+.energy-flow-clash {
+  fill: #ff6b81;
+  filter: drop-shadow(0 0 4px #ff6b81);
+}
+
+.energy-flow-tempo-jump {
+  fill: var(--bg);
+  stroke: #5cc8ff;
+  stroke-width: 1.75;
+  filter: drop-shadow(0 0 4px #5cc8ff);
+}
+
+.energy-flow-cursor {
+  stroke: rgba(255, 255, 255, 0.22);
+}
+
+.energy-flow-current line {
+  stroke: var(--point-color);
+  opacity: 0.5;
+}
+
+.energy-flow-pulse {
+  fill: none;
+  stroke: var(--point-color);
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: energy-flow-pulse 1.6s ease-out infinite;
+}
+
+.energy-flow.paused .energy-flow-pulse {
+  animation: none;
+  opacity: 0.45;
+}
+
+@keyframes energy-flow-pulse {
+  from {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+.energy-flow-dot {
+  transition: r 0.12s;
+}
+
+.energy-flow-current-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-anchor: middle;
+}
+
+.energy-flow-tooltip {
+  position: absolute;
+  top: calc(100% + 2px);
+  width: 250px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(22, 24, 30, 0.92);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.energy-flow-tooltip-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.energy-flow-tooltip-index {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.energy-flow-tooltip-title {
+  flex: 1;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.energy-flow-tooltip-key {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: hsl(var(--key-hue) 80% 60% / 0.16);
+  color: hsl(var(--key-hue) 85% 75%);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.energy-flow-tooltip-artist {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.energy-flow-tooltip-bpm {
+  margin-right: 8px;
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.energy-flow-tooltip-mix {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.energy-flow-tooltip-mix span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* Track list */
 
 .track-list {
@@ -1099,7 +1401,8 @@ button.track-row:hover .track-play {
 @media (prefers-reduced-motion: reduce) {
   .visualizer-button.playing rect,
   .playing-bars i,
-  .mini-record-label {
+  .mini-record-label,
+  .energy-flow-pulse {
     animation: none;
   }
 }
@@ -1394,4 +1697,22 @@ button.track-row:hover .track-play {
 
 .turntable-lamp {
   transition: opacity 0.4s;
+}
+
+/* Clear, so the key drawn on the deck shows through; it only darkens while pressed. */
+.turntable-start-stop {
+  position: absolute;
+  transition: background-color 0.1s;
+}
+
+.turntable-start-stop:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.turntable-start-stop:active:not(:disabled) {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.turntable-start-stop:disabled {
+  cursor: default;
 }

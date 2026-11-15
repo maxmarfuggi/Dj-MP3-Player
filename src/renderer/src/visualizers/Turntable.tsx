@@ -9,6 +9,7 @@ interface TurntableProps {
   isPlaying: boolean;
   currentTime: number;
   duration: number;
+  onStartStop(): void;
 }
 
 /** 33⅓ RPM in degrees per second. */
@@ -55,6 +56,15 @@ const ARM_REST = {
 };
 
 const at = { cx: CENTER.x, cy: CENTER.y };
+
+/** The start/stop key, drawn on the deck and covered by a real button. */
+const START_STOP = { x: 34, y: 656, width: 92, height: 64, radius: 9 };
+const START_STOP_BOX: CSSProperties = {
+  left: `${START_STOP.x / 10}%`,
+  top: `${START_STOP.y / 7.6}%`,
+  width: `${START_STOP.width / 10}%`,
+  height: `${START_STOP.height / 7.6}%`,
+};
 
 /** Where the record sits on the deck, for layers that cover only the record. */
 const RECORD_BOX: CSSProperties = {
@@ -150,7 +160,7 @@ function textMeasurer(weight: number): MeasureText {
   };
 }
 
-export function Turntable({ track, isPlaying, currentTime, duration }: TurntableProps) {
+export function Turntable({ track, isPlaying, currentTime, duration, onStartStop }: TurntableProps) {
   const recordRef = useRef<SVGSVGElement>(null);
   // The spin runs as a browser animation, off the main thread. Script only steps in
   // to ease its speed while the platter starts or stops.
@@ -220,7 +230,7 @@ export function Turntable({ track, isPlaying, currentTime, duration }: Turntable
   );
 
   return (
-    <div className="turntable" role="img" aria-label={track ? `${track.title} on a turntable` : 'Turntable'}>
+    <div className="turntable">
       <div
         className="turntable-stage"
         style={{ '--pivot': `${PIVOT.x / 10}% ${PIVOT.y / 7.6}%` } as CSSProperties}
@@ -228,7 +238,14 @@ export function Turntable({ track, isPlaying, currentTime, duration }: Turntable
         <Deck spinning={isPlaying} />
 
         {/* Only this layer turns. Rings look the same at any angle, so the grooves stay on the deck. */}
-        <svg ref={recordRef} className="turntable-record" style={RECORD_BOX} viewBox={RECORD_VIEW} aria-hidden="true">
+        <svg
+          ref={recordRef}
+          className="turntable-record"
+          style={RECORD_BOX}
+          viewBox={RECORD_VIEW}
+          role="img"
+          aria-label={track ? `${track.title} on a turntable` : 'Turntable'}
+        >
           <circle {...at} r={FIRST_GROOVE} fill="url(#tt-warp)" />
           {SCUFFS.map((path) => (
             <path key={path} d={path} fill="none" stroke="#fff" strokeOpacity="0.07" strokeWidth="0.9" />
@@ -281,6 +298,14 @@ export function Turntable({ track, isPlaying, currentTime, duration }: Turntable
 
         <Tonearm angle={armAngle} shadow />
         <Tonearm angle={armAngle} />
+
+        <button
+          className="turntable-start-stop"
+          style={{ ...START_STOP_BOX, borderRadius: `calc(var(--unit) * ${START_STOP.radius})` }}
+          aria-label={isPlaying ? 'Stop' : 'Start'}
+          disabled={!track}
+          onClick={onStartStop}
+        />
       </div>
     </div>
   );
@@ -499,7 +524,7 @@ const Deck = memo(function Deck({ spinning }: { spinning: boolean }) {
       <rect x="908" y="404.5" width="2.5" height="23" rx="1.25" fill="#f2f3f6" />
 
       {/* Start/stop and speed buttons */}
-      <RaisedRect x={34} y={656} width={92} height={64} radius={9} />
+      <RaisedRect {...START_STOP} />
       <text x="80" y="691" className="turntable-print" style={{ fontSize: 8 }}>
         START·STOP
       </text>

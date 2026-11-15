@@ -85,6 +85,7 @@ export function VisualizerOverlay({ player, onClose }: VisualizerOverlayProps) {
           isPlaying={isPlaying}
           currentTime={player.currentTime}
           duration={player.duration}
+          onStartStop={player.togglePlay}
         />
       )}
       {mode === 'milkdrop' && <MilkDrop analyser={player.analyser} topSlot={topSlot} />}
