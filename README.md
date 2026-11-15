@@ -24,11 +24,11 @@ a copy of a USB on disk.
 
 The app is Electron with a React UI.
 
-- `src/main/volumes.ts` lists mounted volumes and `src/main/libraryManager.ts`
+- `apps/desktop/src/main/volumes.ts` lists mounted volumes and `apps/desktop/src/main/libraryManager.ts`
   polls them, loading any DJ library it finds and dropping it when the volume
   goes away.
-- `src/main/adapters/` has one adapter per library format. Each turns its
-  format into the same `Library` model (`src/shared/types.ts`), so the UI and
+- `apps/desktop/src/main/adapters/` has one adapter per library format. Each turns its
+  format into the same `Library` model (`apps/desktop/src/shared/types.ts`), so the UI and
   the player do not know which software wrote the USB.
   - **rekordbox Device Library**: reads `PIONEER/rekordbox/export.pdb` with
     the parser in `adapters/rekordbox/pdb.ts`.
@@ -42,16 +42,16 @@ The app is Electron with a React UI.
     differ, so each appears as its own library.
   - **Serato**: reads `_Serato_/database V2` and the crates in
     `_Serato_/Subcrates`.
-- `src/main/mediaProtocol.ts` serves audio to the UI as
+- `apps/desktop/src/main/mediaProtocol.ts` serves audio to the UI as
   `media://track/<libraryId>/<trackId>`, with range requests so seeking works,
   and artwork as `media://artwork/<libraryId>/<trackId>`.
-  AIFF files are converted to WAV on the fly (`src/main/aiff.ts`) because
+  AIFF files are converted to WAV on the fly (`apps/desktop/src/main/aiff.ts`) because
   Chromium cannot play AIFF.
-- `src/renderer/` is the UI: playlist tree, track list and transport bar.
+- `apps/desktop/src/renderer/` is the UI: playlist tree, track list and transport bar.
   Click the Title, Artist or BPM header to sort. In a playlist, drag tracks
   (or press Alt+↑/↓) to reorder them. Custom orders are saved on this computer
   only (`useCustomOrders.ts`); the USB is not changed.
-- `src/renderer/src/visualizers/` holds the full-window visualizers, opened
+- `apps/desktop/src/renderer/src/visualizers/` holds the full-window visualizers, opened
   from the button next to the volume slider: a live waveform of the audio
   output, a turntable whose record spins and whose tonearm follows the
   track's progress, and MilkDrop (via

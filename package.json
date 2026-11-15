@@ -1,0 +1,15 @@
+{
+  "name": "djusb",
+  "private": true,
+  "description": "Workspace for the DJ MP3 Player",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w dj-mp3-player",
+    "build": "npm run build -w dj-mp3-player",
+    "start": "npm run start -w dj-mp3-player",
+    "typecheck": "npm run typecheck -w dj-mp3-player",
+    "test": "npm run test -w dj-mp3-player"
+  }
+}
