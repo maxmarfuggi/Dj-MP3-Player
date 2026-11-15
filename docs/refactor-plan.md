@@ -79,9 +79,7 @@ port has an exact reference. Nothing changes for users.
     `fixtures/<format>/<case>/volume/…`, each with an `expected.json` of the
     `Library` it should produce. Use a placeholder for the volume path and a
     fixed sort order, so the files compare the same on any machine.
-  - Add real exports with personal details removed: rekordbox 6 and 7 (both
-    `export.pdb` and Device Library Plus), Serato, and a USB with accented
-    and non-Latin file names. Add AIFF files with their expected WAV output.
+  - Add real exports with personal details removed:synthetic fixtures from the builders (committed) plus one real USB (local only). Add other real exports later when someone reports a USB that doesn't load.
   - Switch the TypeScript tests to compare against `expected.json`.
   - *Done when:* every reader is checked against fixture files.
 
