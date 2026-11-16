@@ -5,6 +5,7 @@
 
 mod model;
 mod paths;
+pub mod rekordbox;
 
 pub use model::{
     library_id, Library, LibraryLoadError, LibrarySource, LibraryState, OpenFolderResult,
