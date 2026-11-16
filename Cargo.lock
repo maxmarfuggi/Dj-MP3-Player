@@ -83,6 +83,7 @@ dependencies = [
 name = "djusb-core"
 version = "0.1.0"
 dependencies = [
+ "djusb-sys",
  "icu_collator",
  "icu_locale_core",
  "rusqlite",
@@ -91,6 +92,10 @@ dependencies = [
  "sha1",
  "ts-rs",
 ]
+
+[[package]]
+name = "djusb-sys"
+version = "0.1.0"
 
 [[package]]
 name = "fallible-iterator"

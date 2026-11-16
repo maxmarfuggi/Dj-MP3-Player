@@ -1,0 +1,15 @@
+[package]
+name = "djusb-sys"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "Operating-system calls that the safe library code cannot make."
+
+# The workspace forbids unsafe code. This crate is the one place a Win32 call
+# is allowed, and every function it exposes is safe. Workspace lints cannot be
+# inherited and overridden together, so the clippy level is repeated here.
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

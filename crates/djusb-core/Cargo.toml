@@ -9,6 +9,7 @@ description = "Reads rekordbox and Serato USB libraries."
 workspace = true
 
 [dependencies]
+djusb-sys = { path = "../djusb-sys" }
 icu_collator = "2.4.0"
 icu_locale_core = "2.4.0"
 rusqlite = { version = "0.43.0", features = ["bundled-sqlcipher-vendored-openssl"] }

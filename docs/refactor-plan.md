@@ -187,9 +187,9 @@ Produces exactly the same `Library` output as TypeScript on every fixture.
   - Open the database with rusqlite's bundled SQLCipher, after copying it
     and its `-wal` file to a temporary folder. This replaces `sqlcipher.ts`.
   - *Done when:* passes the Device Library Plus fixtures.
-- [ ] **1.7 Library manager** · 2–3 days · after 1.4–1.6
+- [x] **1.7 Library manager** · 2–3 days · after 1.4–1.6
   - The scan loop, adding a folder, and resolving tracks and artwork.
-- [ ] **1.8 Volume listing** · 2–3 days · after 1.7
+- [x] **1.8 Volume listing** · 2–3 days · after 1.7
   - Windows labels through `GetVolumeInformationW` (faster than the current
     PowerShell call), macOS `/Volumes`, Linux `/media`, `/run/media` and
     udisks2.
