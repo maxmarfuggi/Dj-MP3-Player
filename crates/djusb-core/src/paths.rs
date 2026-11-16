@@ -41,7 +41,7 @@ pub fn resolve_inside_volume(volume_path: &str, relative_path: &str) -> Option<P
 }
 
 /// Collapses `.` and `..` without requiring the path to exist.
-fn normalize_lexical(path: &Path) -> PathBuf {
+pub(crate) fn normalize_lexical(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {

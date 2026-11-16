@@ -409,7 +409,9 @@ fn loaded(library: Library) -> LoadResult {
 }
 
 fn folder_name(path: &str) -> String {
-    Path::new(path)
+    // `\` separates segments on Windows only. A Windows path still has a last segment on Linux.
+    let unified = path.replace('\\', "/");
+    Path::new(&unified)
         .file_name()
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
@@ -540,7 +542,8 @@ mod tests {
         let artwork = manager
             .resolve_artwork_path(&library.id, &track.id)
             .unwrap();
-        let root = std::path::absolute(&volume).unwrap();
+        // `absolute` leaves `..` in place on Unix. Resolved paths have those collapsed.
+        let root = crate::paths::normalize_lexical(&std::path::absolute(&volume).unwrap());
         assert!(audio.starts_with(&root), "{}", audio.display());
         assert!(artwork.starts_with(&root), "{}", artwork.display());
         assert_eq!(
