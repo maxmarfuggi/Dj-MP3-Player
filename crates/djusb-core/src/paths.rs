@@ -1,7 +1,7 @@
 //! Volume-relative paths. A library file is untrusted input, so a path that
 //! would leave the volume is rejected.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// Whether `path` can be accessed. Any error, including a missing file, is false.
 #[must_use]
@@ -19,20 +19,40 @@ pub fn to_relative_path(library_path: &str) -> &str {
 /// Resolves a volume-relative path to an absolute one.
 ///
 /// Returns `None` when the path would land outside the volume, or on the volume
-/// root itself. Only `/` separates segments, matching `paths.ts`.
+/// root itself. Only `/` separates segments, matching `paths.ts`. `.` and `..`
+/// are collapsed without touching the filesystem, so a path that climbs out of
+/// the volume is rejected even when the file does not exist.
 #[must_use]
 pub fn resolve_inside_volume(volume_path: &str, relative_path: &str) -> Option<PathBuf> {
-    let root = std::path::absolute(volume_path).ok()?;
+    let root = normalize_lexical(&std::path::absolute(volume_path).ok()?);
     let mut candidate = root.clone();
-    for segment in relative_path.split('/') {
+    for segment in relative_path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+    {
         candidate.push(segment);
     }
-    let resolved = std::path::absolute(&candidate).ok()?;
+    let resolved = normalize_lexical(&candidate);
     if resolved.starts_with(&root) && resolved != root {
         Some(resolved)
     } else {
         None
     }
+}
+
+/// Collapses `.` and `..` without requiring the path to exist.
+fn normalize_lexical(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            component => normalized.push(component),
+        }
+    }
+    normalized
 }
 
 /// The file name of a `/`-separated path, without its last extension.

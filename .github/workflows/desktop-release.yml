@@ -60,7 +60,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Build installers
-        run: npm run ${{ matrix.script }}
+        # A tag makes electron-builder try to publish. The release job uploads
+        # the files, so the build jobs must not.
+        run: npm run ${{ matrix.script }} -- --publish never
         env:
           # No signing certificate until Phase 6.
           CSC_IDENTITY_AUTO_DISCOVERY: false
