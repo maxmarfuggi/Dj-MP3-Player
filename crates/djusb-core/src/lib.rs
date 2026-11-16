@@ -3,9 +3,13 @@
 //! The desktop app and the wall player both depend on this crate, so there is
 //! one copy of the library format code.
 
+pub mod aiff;
 mod library;
+pub mod logic;
+pub mod media;
 mod model;
 mod paths;
+pub mod range;
 pub mod rekordbox;
 pub mod serato;
 mod volumes;

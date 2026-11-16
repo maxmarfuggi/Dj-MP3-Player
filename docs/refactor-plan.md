@@ -193,10 +193,10 @@ Produces exactly the same `Library` output as TypeScript on every fixture.
   - Windows labels through `GetVolumeInformationW` (faster than the current
     PowerShell call), macOS `/Volumes`, Linux `/media`, `/run/media` and
     udisks2.
-- [ ] **1.9 Media helpers** · 2–3 days · after 1.3
+- [x] **1.9 Media helpers** · 2–3 days · after 1.3
   - Range parsing, AIFF as WAV, file types and the NFC/NFD retry. Port
     `range.test.ts`, `aiff.test.ts` and `paths.test.ts`.
-- [ ] **1.10 Shared logic** · 2–4 days · after 0.5
+- [x] **1.10 Shared logic** · 2–4 days · after 0.5
   - Sorting, `reconcileOrder`, Camelot keys, energy flow and harmonic
     matching, with their tests.
 
