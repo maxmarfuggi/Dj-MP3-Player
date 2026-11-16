@@ -1,0 +1,45 @@
+# Unsigned installers. Signing and auto-update are Phase 6.
+appId: com.djusb.player
+productName: DJ MP3 Player
+executableName: dj-mp3-player
+directories:
+  buildResources: build
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+asar: true
+# The UI libraries are bundled into out/ by electron-vite, so they are
+# devDependencies and this skips rebuilding native modules.
+npmRebuild: false
+# electron is hoisted to the workspace root, so the builder cannot read it
+# from this package. Keep this equal to the installed electron version.
+electronVersion: 41.7.1
+win:
+  target:
+    - nsis
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+mac:
+  target:
+    - dmg
+  category: public.app-category.music
+  # No Developer ID yet, so the DMG is unsigned on purpose.
+  identity: null
+dmg:
+  artifactName: ${name}-${version}.${ext}
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Audio
+  maintainer: DJ MP3 Player
+appImage:
+  artifactName: ${name}-${version}.${ext}
+deb:
+  artifactName: ${name}-${version}.${ext}

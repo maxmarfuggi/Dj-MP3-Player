@@ -9,6 +9,10 @@
     "dev": "npm run dev -w dj-mp3-player",
     "build": "npm run build -w dj-mp3-player",
     "start": "npm run start -w dj-mp3-player",
+    "dist": "npm run dist -w dj-mp3-player",
+    "dist:win": "npm run dist:win -w dj-mp3-player",
+    "dist:mac": "npm run dist:mac -w dj-mp3-player",
+    "dist:linux": "npm run dist:linux -w dj-mp3-player",
     "typecheck": "npm run typecheck -w dj-mp3-player",
     "test": "npm run test -w dj-mp3-player",
     "fixtures": "npm run fixtures -w dj-mp3-player --"

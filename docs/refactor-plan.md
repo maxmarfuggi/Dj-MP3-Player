@@ -133,7 +133,7 @@ anyway"), and macOS blocks the app until it's allowed in System Settings >
 Privacy & Security ("Open Anyway"). Users update by downloading the new
 version.
 
-- [ ] **D.1 Installers** · 1–2 days · after 0.1
+- [x] **D.1 Installers** · 1–2 days · after 0.1
   - Add electron-builder: a Windows installer (NSIS), a macOS DMG, and Linux
     AppImage and `.deb` packages.
   - *Done when:* installers build locally and the installed app runs.
@@ -170,11 +170,11 @@ Produces exactly the same `Library` output as TypeScript on every fixture.
 - [x] **1.1 Cargo workspace and CI** · 1 day · after 0.1
   - `crates/djusb-core`, with `cargo test`, `clippy`, `fmt` and `cargo-deny`
     (licence checks) in CI.
-- [ ] **1.2 Data model** · 1–2 days · after 0.3
+- [x] **1.2 Data model** · 1–2 days · after 0.3
   - Structs with `serde` (camelCase) matching the contract. Generate
     TypeScript types with `ts-rs`, and fail CI if they differ from
     `types.ts`.
-- [ ] **1.3 Path helpers** · 0.5 day · after 1.2
+- [x] **1.3 Path helpers** · 0.5 day · after 1.2
   - Port `paths.ts`, including the safe resolve-inside-volume check, with
     its tests.
 - [ ] **1.4 rekordbox `export.pdb`** · 3–5 days · after 1.3

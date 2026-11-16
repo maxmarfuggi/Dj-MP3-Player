@@ -3,28 +3,36 @@
   "version": "0.1.0",
   "private": true,
   "description": "An MP3 Player for DJ USBs",
+  "author": "DJ MP3 Player",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maxmarfuggi/Dj-MP3-Player.git"
+  },
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux",
     "typecheck": "tsc -p . && tsc -p src/renderer",
     "test": "vitest run",
     "fixtures": "tsx scripts/fixtures.ts"
-  },
-  "dependencies": {
-    "butterchurn": "^2.6.7",
-    "butterchurn-presets": "^2.4.7",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
+    "butterchurn": "^2.6.7",
+    "butterchurn-presets": "^2.4.7",
     "electron": "^41.7.1",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",

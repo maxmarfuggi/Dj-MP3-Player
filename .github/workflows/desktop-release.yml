@@ -1,0 +1,144 @@
+# Unsigned desktop installers. Signing is Phase 6.
+# Push a tag that matches apps/desktop/package.json, such as v0.1.0.
+name: Desktop release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    name: version and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Tag matches the desktop version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./apps/desktop/package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match apps/desktop/package.json version $version"
+            exit 1
+          fi
+      - run: npm test
+
+  build:
+    name: ${{ matrix.name }}
+    needs: check
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows installer
+            os: windows-latest
+            script: dist:win
+          - name: macOS installer
+            os: macos-latest
+            script: dist:mac
+          - name: Linux installers
+            os: ubuntu-latest
+            script: dist:linux
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build installers
+        run: npm run ${{ matrix.script }}
+        env:
+          # No signing certificate until Phase 6.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Collect installer files
+        run: |
+          version="$(node -p "require('./apps/desktop/package.json').version")"
+          mkdir -p installers
+          copy() {
+            test -f "$1"
+            cp "$1" installers/
+            if [ -f "$1.blockmap" ]; then
+              cp "$1.blockmap" installers/
+            fi
+          }
+          case "$RUNNER_OS" in
+            Windows) copy "apps/desktop/dist/dj-mp3-player-${version}-setup.exe" ;;
+            macOS) copy "apps/desktop/dist/dj-mp3-player-${version}.dmg" ;;
+            Linux)
+              copy "apps/desktop/dist/dj-mp3-player-${version}.AppImage"
+              copy "apps/desktop/dist/dj-mp3-player-${version}.deb"
+              ;;
+          esac
+          ls -l installers
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: installers/*
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: installers
+      - name: Require every installer
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          missing=0
+          for file in \
+            "dj-mp3-player-${version}-setup.exe" \
+            "dj-mp3-player-${version}.dmg" \
+            "dj-mp3-player-${version}.AppImage" \
+            "dj-mp3-player-${version}.deb"
+          do
+            if [ ! -f "installers/$file" ]; then
+              echo "::error::Missing $file"
+              missing=1
+            fi
+          done
+          ls -l installers
+          exit "$missing"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          notes="$(mktemp)"
+          cat > "$notes" <<EOF
+          Unsigned installers for DJ MP3 Player ${version}.
+
+          - Windows (x64): \`dj-mp3-player-${version}-setup.exe\`. SmartScreen shows a warning; choose More info, then Run anyway.
+          - macOS (Apple Silicon): \`dj-mp3-player-${version}.dmg\`. Allow the app in System Settings, Privacy & Security.
+          - Linux (x64): \`dj-mp3-player-${version}.AppImage\` and \`dj-mp3-player-${version}.deb\`.
+
+          These builds are not code-signed. To update, download the new installer.
+          EOF
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" installers/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" installers/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "DJ MP3 Player ${version}" \
+              --notes-file "$notes"
+          fi

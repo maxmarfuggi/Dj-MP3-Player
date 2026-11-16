@@ -7,3 +7,11 @@ description = "Reads rekordbox and Serato USB libraries."
 
 [lints]
 workspace = true
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+sha1 = "0.11.0"
+ts-rs = { version = "12.0.1", features = ["serde-compat"] }
+
+[dev-dependencies]
+serde_json = "1.0.154"

@@ -1,3 +1,6 @@
+// The data types in this file are checked against `crates/djusb-core`. A Rust
+// test fails when the two disagree. `DjUsbApi` and `MEDIA_SCHEME` are desktop-only.
+
 /** `rekordbox` is rekordbox's Device Library (`export.pdb`). */
 export type LibrarySource = 'rekordbox' | 'deviceLibraryPlus' | 'serato';
 
