@@ -33,6 +33,9 @@ allow = [
     "Zlib",
     "CC0-1.0",
     "Unlicense",
+    # SQLCipher ships SQLite under the public-domain blessing and libtomcrypt under the WTFPL.
+    "blessing",
+    "WTFPL",
 ]
 confidence-threshold = 0.8
 

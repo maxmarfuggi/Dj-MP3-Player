@@ -9,6 +9,9 @@ description = "Reads rekordbox and Serato USB libraries."
 workspace = true
 
 [dependencies]
+icu_collator = "2.4.0"
+icu_locale_core = "2.4.0"
+rusqlite = { version = "0.43.0", features = ["bundled-sqlcipher-vendored-openssl"] }
 serde = { version = "1.0.229", features = ["derive"] }
 sha1 = "0.11.0"
 ts-rs = { version = "12.0.1", features = ["serde-compat"] }

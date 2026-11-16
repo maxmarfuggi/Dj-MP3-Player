@@ -101,12 +101,30 @@ export interface WalFrame {
   salts?: Buffer;
 }
 
+/**
+ * SQLite's WAL checksum. Magic `0x377f0682` selects the little-endian word
+ * order, and the two running sums are stored big-endian. SQLCipher checks
+ * these before it will replay a frame, so a log without them is ignored.
+ */
+function walChecksum(chunks: Buffer[], s1 = 0, s2 = 0): [number, number] {
+  for (const chunk of chunks) {
+    for (let offset = 0; offset < chunk.length; offset += 8) {
+      s1 = (s1 + chunk.readUInt32LE(offset) + s2) >>> 0;
+      s2 = (s2 + chunk.readUInt32LE(offset + 4) + s1) >>> 0;
+    }
+  }
+  return [s1, s2];
+}
+
 export function walFile(salts: Buffer, frames: WalFrame[]): Buffer {
   const header = Buffer.alloc(32);
   header.writeUInt32BE(WAL_MAGIC, 0);
   header.writeUInt32BE(WAL_VERSION, 4);
   header.writeUInt32BE(PAGE_SIZE, 8);
   salts.copy(header, 16);
+  let [s1, s2] = walChecksum([header.subarray(0, 24)]);
+  header.writeUInt32BE(s1, 24);
+  header.writeUInt32BE(s2, 28);
   return Buffer.concat([
     header,
     ...frames.flatMap((frame) => {
@@ -114,6 +132,9 @@ export function walFile(salts: Buffer, frames: WalFrame[]): Buffer {
       frameHeader.writeUInt32BE(frame.pageNumber, 0);
       frameHeader.writeUInt32BE(frame.commitPageCount ?? 0, 4);
       (frame.salts ?? salts).copy(frameHeader, 8);
+      [s1, s2] = walChecksum([frameHeader.subarray(0, 8), frame.page], s1, s2);
+      frameHeader.writeUInt32BE(s1, 16);
+      frameHeader.writeUInt32BE(s2, 20);
       return [frameHeader, frame.page];
     }),
   ]);

@@ -180,10 +180,10 @@ Produces exactly the same `Library` output as TypeScript on every fixture.
 - [x] **1.4 rekordbox `export.pdb`** · 3–5 days · after 1.3
   - Port `pdb.ts` and the playlist tree builder from `rekordbox/index.ts`.
   - *Done when:* passes the `export.pdb` fixtures.
-- [ ] **1.5 Serato** · 2–3 days · after 1.3
+- [x] **1.5 Serato** · 2–3 days · after 1.3
   - Port `chunks.ts`, the database and the crates.
   - *Done when:* passes the Serato fixtures.
-- [ ] **1.6 rekordbox Device Library Plus** · 2–4 days · after 1.4
+- [x] **1.6 rekordbox Device Library Plus** · 2–4 days · after 1.4
   - Open the database with rusqlite's bundled SQLCipher, after copying it
     and its `-wal` file to a temporary folder. This replaces `sqlcipher.ts`.
   - *Done when:* passes the Device Library Plus fixtures.

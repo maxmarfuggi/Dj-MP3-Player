@@ -1,5 +1,6 @@
 //! rekordbox Device Library (`export.pdb`). Device Library Plus has its own reader.
 
+pub mod device_library_plus;
 mod pdb;
 
 use std::collections::{HashMap, HashSet};
