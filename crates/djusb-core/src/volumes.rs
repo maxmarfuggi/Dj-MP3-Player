@@ -7,8 +7,10 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+#[cfg(windows)]
 use std::sync::Mutex;
 
+#[cfg(windows)]
 use crate::paths::exists;
 use crate::Volume;
 
