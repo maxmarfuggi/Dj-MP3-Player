@@ -50,24 +50,38 @@ export async function plainDatabase(setup: (database: DatabaseSync) => void, fro
   }
 }
 
+/** Source of the salt and IVs. Fixtures pass a seeded one so regenerating them gives the same bytes. */
+export type RandomBytes = (size: number) => Buffer;
+
 export async function encryptSqlCipher(
   plain: Buffer,
   passphrase: string,
+  random: RandomBytes = randomBytes,
 ): Promise<{ database: Buffer; keys: SqlCipherKeys }> {
-  const salt = randomBytes(SALT_SIZE);
+  const salt = random(SALT_SIZE);
   const keys = await deriveKeys(passphrase, salt);
   const pages: Buffer[] = [];
   for (let pageNumber = 1; pageNumber <= plain.length / PAGE_SIZE; pageNumber++) {
-    const page = encryptPage(plain.subarray((pageNumber - 1) * PAGE_SIZE, pageNumber * PAGE_SIZE), pageNumber, keys);
+    const page = encryptPage(
+      plain.subarray((pageNumber - 1) * PAGE_SIZE, pageNumber * PAGE_SIZE),
+      pageNumber,
+      keys,
+      random,
+    );
     if (pageNumber === 1) salt.copy(page);
     pages.push(page);
   }
   return { database: Buffer.concat(pages), keys };
 }
 
-export function encryptPage(plain: Buffer, pageNumber: number, keys: SqlCipherKeys): Buffer {
+export function encryptPage(
+  plain: Buffer,
+  pageNumber: number,
+  keys: SqlCipherKeys,
+  random: RandomBytes = randomBytes,
+): Buffer {
   const start = pageNumber === 1 ? SALT_SIZE : 0;
-  const iv = randomBytes(16);
+  const iv = random(16);
   const cipher = createCipheriv('aes-256-cbc', keys.encryption, iv);
   cipher.setAutoPadding(false);
   const encrypted = Buffer.concat([cipher.update(plain.subarray(start, PAGE_SIZE - RESERVED_SIZE)), cipher.final()]);

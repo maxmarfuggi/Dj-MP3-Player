@@ -9,7 +9,8 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc -p . && tsc -p src/renderer",
-    "test": "vitest run"
+    "test": "vitest run",
+    "fixtures": "tsx scripts/fixtures.ts"
   },
   "dependencies": {
     "butterchurn": "^2.6.7",
@@ -24,6 +25,7 @@
     "@vitejs/plugin-react": "^6.3.0",
     "electron": "^41.7.1",
     "electron-vite": "^6.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
     "vitest": "^4.1.12"

@@ -1,0 +1,100 @@
+{
+  "volumeName": "basic",
+  "libraries": [
+    {
+      "id": "rekordbox-{volumeHash}",
+      "source": "rekordbox",
+      "volumeName": "basic",
+      "volumePath": "{volume}",
+      "tracks": [
+        {
+          "id": "7",
+          "title": "Mädchen",
+          "artist": "Short Offset",
+          "album": "The Album",
+          "bpm": 128.5,
+          "key": "Am",
+          "durationSec": 301,
+          "relativePath": "Contents/Artist/Mädchen.mp3"
+        },
+        {
+          "id": "8",
+          "title": "A very long track title A very long track title A very long track title A very long track title A very long track title A very long track title A very long track title A very long track title",
+          "artist": "",
+          "album": "",
+          "bpm": null,
+          "key": null,
+          "durationSec": null,
+          "relativePath": "Contents/long.wav"
+        },
+        {
+          "id": "9",
+          "title": "Untitled Jam",
+          "artist": "",
+          "album": "",
+          "bpm": null,
+          "key": null,
+          "durationSec": null,
+          "relativePath": "Contents/Some Artist/Untitled Jam.wav"
+        },
+        {
+          "id": "10",
+          "title": "東京の夜",
+          "artist": "Кино",
+          "album": "",
+          "bpm": 90,
+          "key": "8A",
+          "durationSec": 200,
+          "relativePath": "Contents/日本/東京の夜.mp3"
+        }
+      ],
+      "playlists": [
+        {
+          "id": "1",
+          "name": "Sets",
+          "kind": "folder",
+          "children": [
+            {
+              "id": "2",
+              "name": "Warm up",
+              "kind": "playlist",
+              "children": [],
+              "trackIds": [
+                "7",
+                "9"
+              ]
+            },
+            {
+              "id": "3",
+              "name": "Peak time",
+              "kind": "playlist",
+              "children": [],
+              "trackIds": [
+                "8",
+                "7"
+              ]
+            }
+          ],
+          "trackIds": []
+        },
+        {
+          "id": "4",
+          "name": "Orphan",
+          "kind": "playlist",
+          "children": [],
+          "trackIds": []
+        },
+        {
+          "id": "5",
+          "name": "Ночь",
+          "kind": "playlist",
+          "children": [],
+          "trackIds": [
+            "10"
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

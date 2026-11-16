@@ -73,13 +73,15 @@ port has an exact reference. Nothing changes for users.
     so `npm run dev` and `npm test` still work from the top.
   - *Done when:* dev, build, typecheck and tests pass with no code changes.
 
-- [ ] **0.2 Shared fixtures** · 2–4 days · after 0.1
+- [x] **0.2 Shared fixtures** · 2–4 days · after 0.1
   - Write a script that runs `tests/helpers/pdbBuilder.ts`,
     `seratoBuilder.ts` and `sqlcipherBuilder.ts` and saves their output as
     `fixtures/<format>/<case>/volume/…`, each with an `expected.json` of the
     `Library` it should produce. Use a placeholder for the volume path and a
     fixed sort order, so the files compare the same on any machine.
-  - Add real exports with personal details removed:synthetic fixtures from the builders (committed) plus one real USB (local only). Add other real exports later when someone reports a USB that doesn't load.
+  - Synthetic fixtures from the builders (committed) plus one real USB
+    (local only, in `fixtures/local/`). Add other real exports later when
+    someone reports a USB that doesn't load.
   - Switch the TypeScript tests to compare against `expected.json`.
   - *Done when:* every reader is checked against fixture files.
 

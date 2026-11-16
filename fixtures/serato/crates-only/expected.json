@@ -1,0 +1,46 @@
+{
+  "volumeName": "crates-only",
+  "libraries": [
+    {
+      "id": "serato-{volumeHash}",
+      "source": "serato",
+      "volumeName": "crates-only",
+      "volumePath": "{volume}",
+      "tracks": [
+        {
+          "id": "Music/Fresh Tune.flac",
+          "title": "Fresh Tune",
+          "artist": "",
+          "album": "",
+          "bpm": null,
+          "key": null,
+          "durationSec": null,
+          "relativePath": "Music/Fresh Tune.flac"
+        },
+        {
+          "id": "Music/Second.mp3",
+          "title": "Second",
+          "artist": "",
+          "album": "",
+          "bpm": null,
+          "key": null,
+          "durationSec": null,
+          "relativePath": "Music/Second.mp3"
+        }
+      ],
+      "playlists": [
+        {
+          "id": "Openers",
+          "name": "Openers",
+          "kind": "playlist",
+          "children": [],
+          "trackIds": [
+            "Music/Fresh Tune.flac",
+            "Music/Second.mp3"
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

@@ -1,10 +1,6 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildRekordboxLibrary, rekordboxAdapter } from '../src/main/adapters/rekordbox';
+import { describe, expect, it } from 'vitest';
+import { buildRekordboxLibrary } from '../src/main/adapters/rekordbox';
 import type { PdbData, PdbTrack } from '../src/main/adapters/rekordbox/pdb';
-import { TABLE, buildPdb, playlistEntryRow, playlistNodeRow, trackRow } from './helpers/pdbBuilder';
 
 const volume = { path: '/Volumes/GIGS', name: 'GIGS' };
 
@@ -132,49 +128,5 @@ describe('buildRekordboxLibrary', () => {
     );
 
     expect(library.playlists.map((node) => node.name)).toEqual(['Orphan']);
-  });
-});
-
-describe('rekordboxAdapter', () => {
-  let root: string;
-  let databaseDirectory: string;
-
-  beforeEach(async () => {
-    root = await mkdtemp(path.join(os.tmpdir(), 'rekordbox-usb-'));
-    databaseDirectory = path.join(root, 'PIONEER', 'rekordbox');
-    await mkdir(databaseDirectory, { recursive: true });
-  });
-
-  afterEach(async () => {
-    await rm(root, { recursive: true, force: true });
-  });
-
-  it('ignores volumes without a rekordbox export', async () => {
-    expect(await rekordboxAdapter.detect(root)).toBe(false);
-  });
-
-  it('loads export.pdb from a volume', async () => {
-    await writeFile(
-      path.join(databaseDirectory, 'export.pdb'),
-      buildPdb([
-        { type: TABLE.tracks, pages: [{ rows: [trackRow({ id: 1, title: 'Opener', filePath: '/Contents/opener.mp3' })] }] },
-        {
-          type: TABLE.playlistTree,
-          pages: [{ rows: [playlistNodeRow({ id: 1, parentId: 0, sortOrder: 0, isFolder: false, name: 'Set' })] }],
-        },
-        { type: TABLE.playlistEntries, pages: [{ rows: [playlistEntryRow(1, 1, 1)] }] },
-      ]),
-    );
-
-    expect(await rekordboxAdapter.detect(root)).toBe(true);
-    const library = await rekordboxAdapter.load({ path: root, name: 'GIGS' });
-    expect(library.tracks.map((track) => track.title)).toEqual(['Opener']);
-    expect(library.playlists.map((node) => [node.name, node.trackIds])).toEqual([['Set', ['1']]]);
-  });
-
-  it('leaves a Device Library Plus only export to its own adapter', async () => {
-    await writeFile(path.join(databaseDirectory, 'exportLibrary.db'), 'encrypted');
-
-    expect(await rekordboxAdapter.detect(root)).toBe(false);
   });
 });

@@ -1,0 +1,110 @@
+{
+  "volumeName": "basic",
+  "libraries": [
+    {
+      "id": "deviceLibraryPlus-{volumeHash}",
+      "source": "deviceLibraryPlus",
+      "volumeName": "basic",
+      "volumePath": "{volume}",
+      "tracks": [
+        {
+          "id": "1",
+          "title": "Opener",
+          "artist": "DJ Example",
+          "album": "The Album",
+          "bpm": 128.5,
+          "key": "8A",
+          "durationSec": 301,
+          "relativePath": "Contents/opener.mp3",
+          "genre": "House",
+          "label": "Big Records",
+          "color": {
+            "name": "Warm up",
+            "value": "#3fcf5c"
+          },
+          "artworkPath": "PIONEER/Artwork/00001/a1_m.jpg"
+        },
+        {
+          "id": "2",
+          "title": "Untitled Jam",
+          "artist": "",
+          "album": "",
+          "bpm": null,
+          "key": null,
+          "durationSec": null,
+          "relativePath": "Contents/Some Artist/Untitled Jam.wav",
+          "genre": "",
+          "label": "",
+          "artworkPath": "PIONEER/Artwork/00001/B2.JPG"
+        },
+        {
+          "id": "3",
+          "title": "Closer",
+          "artist": "DJ Example",
+          "album": "",
+          "bpm": 120,
+          "key": null,
+          "durationSec": 240,
+          "relativePath": "Contents/closer.mp3",
+          "genre": "",
+          "label": "",
+          "color": {
+            "name": "Pink",
+            "value": "#f870c8"
+          }
+        },
+        {
+          "id": "5",
+          "title": "Café del Mar",
+          "artist": "Сергей",
+          "album": "",
+          "bpm": 99.5,
+          "key": null,
+          "durationSec": 412,
+          "relativePath": "Contents/Сергей/Café del Mar.aiff",
+          "genre": "",
+          "label": ""
+        }
+      ],
+      "playlists": [
+        {
+          "id": "1",
+          "name": "Friday",
+          "kind": "folder",
+          "children": [
+            {
+              "id": "3",
+              "name": "Warm up",
+              "kind": "playlist",
+              "children": [],
+              "trackIds": [
+                "1",
+                "3"
+              ]
+            },
+            {
+              "id": "2",
+              "name": "Peak time",
+              "kind": "playlist",
+              "children": [],
+              "trackIds": [
+                "2"
+              ]
+            }
+          ],
+          "trackIds": []
+        },
+        {
+          "id": "4",
+          "name": "Loose ends",
+          "kind": "playlist",
+          "children": [],
+          "trackIds": [
+            "5"
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

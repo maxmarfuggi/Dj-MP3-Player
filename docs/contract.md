@@ -188,9 +188,51 @@ Tracks are the database tracks in file order. A crate may name a file the
 database does not list. That file is appended, with an empty artist and album
 and null bpm, key, and duration. The first time a path is seen wins.
 
-Crate files are read in directory order. Their names, without `.crate`, are
-split on `%%` to build the tree. Sibling crates are then sorted by name with
-a numeric, case-insensitive comparison in the runtime's default locale.
+Crate files are read in order of file name, comparing UTF-16 code units, so
+the result does not depend on how the file system lists them. Their names,
+without `.crate`, are split on `%%` to build the tree. Sibling crates are then
+sorted by name with a numeric, case-insensitive comparison in the `en` locale,
+so `crate 9` comes before `crate 10`.
+
+## Fixtures
+
+`fixtures/` holds sample volumes and the output a reader must produce for
+each. Any implementation of this contract runs the same files.
+
+```
+fixtures/<format>/<case>/volume/…        the files of a volume
+fixtures/<format>/<case>/expected.json   what reading it produces
+fixtures/aiff/<case>/input.aiff          an AIFF file
+fixtures/aiff/<case>/expected.wav        the WAV it is served as
+```
+
+`<format>` is `rekordbox`, `deviceLibraryPlus`, or `serato`, after the
+reader each case mainly checks. A case's volume is read the way the app reads
+a mounted USB: every reader that detects its export runs, in the order
+rekordbox, Device Library Plus, Serato. The volume name is the case folder's
+name. `expected.json` is:
+
+| Field | Meaning |
+| --- | --- |
+| `volumeName` | The case folder's name. |
+| `libraries` | Each `Library` read, in reader order. `volumePath` is `{volume}` and the hash in `id` is `{volumeHash}`, for example `rekordbox-{volumeHash}`. Replace both with the real values before comparing, or compare with those two fields set to the placeholders. |
+| `errors` | The sources whose export was detected but could not be read. Messages are not part of the contract. |
+
+An AIFF case without `expected.wav` is one the converter must decline, such
+as compressed AIFF-C.
+
+`npm run fixtures` rebuilds every case from the test builders in
+`apps/desktop/tests/helpers`. The same input always produces the same bytes.
+`expected.json` and `expected.wav` come from the current TypeScript code, so
+a change to how a library is read shows up as a diff in them, and that diff is
+reviewed with the change.
+
+`npm run fixtures -- capture <volume> <name>` copies the library files of a
+real USB (the rekordbox databases, `PIONEER/Artwork`, and Serato's database
+and crates, but no audio) into `fixtures/local/<name>`, then writes its
+`expected.json`. The USB is only read. `fixtures/local/` is not committed,
+because it holds the owner's track and playlist names. Its cases run in the
+tests only on machines that have them.
 
 ## Read-only rule
 

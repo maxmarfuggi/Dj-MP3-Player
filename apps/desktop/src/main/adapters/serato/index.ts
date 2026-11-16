@@ -51,8 +51,9 @@ async function listCrateFiles(volumePath: string): Promise<string[]> {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
   }
-  // macOS leaves `._*` metadata files on FAT/exFAT drives.
-  return fileNames.filter((name) => name.endsWith(CRATE_EXTENSION) && !name.startsWith('._'));
+  // macOS leaves `._*` metadata files on FAT/exFAT drives. Sorting makes the
+  // order of tracks only crates know about independent of the file system.
+  return fileNames.filter((name) => name.endsWith(CRATE_EXTENSION) && !name.startsWith('._')).sort();
 }
 
 /** Reads every track from a `database V2` file. */
@@ -162,8 +163,10 @@ function trackFromPath(relativePath: string): Track {
   };
 }
 
+const crateNameCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+
 function sortByName(nodes: PlaylistNode[]): void {
-  nodes.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  nodes.sort((a, b) => crateNameCollator.compare(a.name, b.name));
   for (const node of nodes) sortByName(node.children);
 }
 

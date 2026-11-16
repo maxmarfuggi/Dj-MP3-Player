@@ -1,0 +1,142 @@
+{
+  "volumeName": "basic",
+  "libraries": [
+    {
+      "id": "serato-{volumeHash}",
+      "source": "serato",
+      "volumeName": "basic",
+      "volumePath": "{volume}",
+      "tracks": [
+        {
+          "id": "Music/Björk - Jóga.mp3",
+          "title": "Jóga",
+          "artist": "Björk",
+          "album": "Homogenic",
+          "bpm": 126,
+          "key": "Bb",
+          "durationSec": 382.93,
+          "relativePath": "Music/Björk - Jóga.mp3"
+        },
+        {
+          "id": "Music/Untitled Jam.wav",
+          "title": "Untitled Jam",
+          "artist": "",
+          "album": "",
+          "bpm": null,
+          "key": null,
+          "durationSec": null,
+          "relativePath": "Music/Untitled Jam.wav"
+        },
+        {
+          "id": "Music/a.mp3",
+          "title": "A",
+          "artist": "",
+          "album": "",
+          "bpm": null,
+          "key": null,
+          "durationSec": null,
+          "relativePath": "Music/a.mp3"
+        },
+        {
+          "id": "Музыка/Лето.flac",
+          "title": "Лето",
+          "artist": "Кино",
+          "album": "",
+          "bpm": null,
+          "key": null,
+          "durationSec": 245,
+          "relativePath": "Музыка/Лето.flac"
+        },
+        {
+          "id": "Music/Fresh Tune.flac",
+          "title": "Fresh Tune",
+          "artist": "",
+          "album": "",
+          "bpm": null,
+          "key": null,
+          "durationSec": null,
+          "relativePath": "Music/Fresh Tune.flac"
+        },
+        {
+          "id": "Music/New One.mp3",
+          "title": "New One",
+          "artist": "",
+          "album": "",
+          "bpm": null,
+          "key": null,
+          "durationSec": null,
+          "relativePath": "Music/New One.mp3"
+        }
+      ],
+      "playlists": [
+        {
+          "id": "crate 9",
+          "name": "crate 9",
+          "kind": "playlist",
+          "children": [],
+          "trackIds": [
+            "Music/New One.mp3",
+            "Music/a.mp3"
+          ]
+        },
+        {
+          "id": "crate 10",
+          "name": "crate 10",
+          "kind": "playlist",
+          "children": [],
+          "trackIds": [
+            "Музыка/Лето.flac"
+          ]
+        },
+        {
+          "id": "House",
+          "name": "House",
+          "kind": "playlist",
+          "children": [
+            {
+              "id": "House%%Deep",
+              "name": "Deep",
+              "kind": "playlist",
+              "children": [],
+              "trackIds": [
+                "Music/Untitled Jam.wav"
+              ]
+            }
+          ],
+          "trackIds": [
+            "Music/a.mp3",
+            "Music/Björk - Jóga.mp3"
+          ]
+        },
+        {
+          "id": "Techno",
+          "name": "Techno",
+          "kind": "playlist",
+          "children": [
+            {
+              "id": "Techno%%Hard",
+              "name": "Hard",
+              "kind": "playlist",
+              "children": [],
+              "trackIds": [
+                "Music/a.mp3",
+                "Music/Fresh Tune.flac"
+              ]
+            }
+          ],
+          "trackIds": []
+        },
+        {
+          "id": "夏",
+          "name": "夏",
+          "kind": "playlist",
+          "children": [],
+          "trackIds": [
+            "Музыка/Лето.flac"
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

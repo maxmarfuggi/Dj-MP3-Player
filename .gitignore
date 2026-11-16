@@ -3,3 +3,5 @@ out/
 dist/
 .DS_Store
 *.log
+# Copies of real USBs hold personal track and playlist names.
+fixtures/local/
