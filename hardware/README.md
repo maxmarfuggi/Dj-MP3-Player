@@ -1,4 +1,95 @@
-# Wall player: proof of concept
+# Enclosures
+
+Both cases use a Raspberry Pi 5 and the 7" touch display. The wall player
+has two rotary encoders. The club shell has one encoder under the platter
+and a play/pause key. The wiring and the software setup below are shared.
+
+- **[Club shell](#club-shell)** — a flat wall player in the shape of an
+  XDJ-1000, printed clear so the boards show through.
+- **[Wall player](#wall-player)** — the first case. Etch A Sketch shaped, and
+  it hangs on the wall.
+
+# Club shell
+
+A rectangular box that hangs on the wall. The face is flat and parallel to
+the wall, the way an XDJ-1000 is: there is no slope. The display sits in the
+upper half, a flat jog platter sits below it, a play/pause key sits in the
+bottom-left corner, and the USB ports sit in a pocket along the top edge.
+Nothing on the shell is labeled.
+
+It is 236 × 362 × 52 mm. The platter is 150 mm across, with a knurled grip,
+a ring, and a small center pad, and its top is flat. It is not a copy of a
+Pioneer player. It only has the controls this project uses, and it has no
+branding.
+
+The clear shell is the other reference: the unlabeled transparent
+CDJ-2000NXS2 Virgil Abloh showed in 2019, the one you can see the mechanism
+through. Printed clear PETG comes out frosted. Clear resin, polished, is
+closer to that piece. Skip metal-filled filament either way. It blocks
+Bluetooth. Print the play key in a dark filament so it reads against the
+clear face.
+
+![Club shell](cdj-shell/preview.png)
+
+![Club shell face](cdj-shell/preview-top.png)
+
+![Club shell from the side](cdj-shell/preview-side.png)
+
+- **Jog platter:** browse. Turn to scroll, press to select, hold to go back.
+- **Play key:** play or pause. A printed cap over a momentary switch.
+- **Top edge:** USB-A and USB-C, in a recessed pocket above the screen.
+- **Bottom edge:** the power cable leaves through a notch, with a 3.5 mm
+  jack beside it. Set `audio_jack_d = 0` in the model to leave the jack out.
+- **Volume** is on the touchscreen. There is no volume knob.
+
+The model is `cdj-shell/shell.scad`. Open it in OpenSCAD and press F5. The
+body and the face are each split in two, so every part fits a 250 × 210 mm
+bed. To export one for printing, set `part` at the top, press F6, and use
+File > Export > STL. The command lines are in the file header. Every part
+is already oriented for the bed, and none of them need supports. Two keyholes
+in the wall side let it hang on a pair of screws, 120 mm apart.
+
+| Part | `part` value | Quantity |
+| --- | --- | --- |
+| Body, lower half | `body_lower` | 1 |
+| Body, upper half | `body_upper` | 1 |
+| Face, lower half | `face_lower` | 1 |
+| Face, upper half | `face_upper` | 1 |
+| Jog platter | `jog` | 1 |
+| Play key | `play` | 1 |
+| Seam plate | `splice` | 2 |
+| Face alignment pin | `pin` | 2 |
+
+Screws are M3, driven straight into the plastic: eight M3×12 flat heads
+through the face into the posts, and four M3×8 pan heads through the seam
+plates into the floor. The encoder, the USB leads and the jack bring their
+own nuts and screws.
+
+**Putting it together**
+
+1. Prove the electronics on the bench first. The wiring table and the
+   software setup in the wall-player section below cover the display and the
+   encoder. The platter is the left-hand encoder in that table. The play key
+   is a momentary switch on pin 22 (GPIO 25), the pin that table uses for
+   the volume switch, wired to ground.
+2. Screw the two body halves together with the seam plates. The plates sit
+   on the pads inside the floor, one left and one right, and the screws go
+   in from above.
+3. Set the display onto the four posts in the upper half, glass toward the
+   room. A scrap of foam on each post takes up the tolerance.
+4. Fit the encoder to the face from inside, with the nut in the recess, and
+   screw the USB sockets into the pocket. Mount the play switch behind the
+   round hole so the key's stem lands on it.
+5. Tap the two pins into one face half, bring the halves together, and set
+   the face into the rim. The window lip captures the display. Screw the
+   face down.
+6. Push the platter onto the shaft and drop the play key into its hole.
+   Zip-tie the power lead through the two holes beside the bottom notch.
+
+The face is 4 mm thick, and the plastic under the encoder nut is 1.6 mm.
+If your encoder's thread is shorter than that, lower `panel_t`.
+
+# Wall player
 
 A Raspberry Pi 5 and a 7" touchscreen in an Etch A Sketch style case. Two big
 knobs sit in the bottom corners, the USB ports are on the right side, and the
