@@ -1,8 +1,7 @@
 import { Readable } from 'node:stream';
 import { protocol } from 'electron';
 import { MEDIA_SCHEME } from '../shared/types';
-import type { LibraryManager } from './libraryManager';
-import { serveMedia } from './mediaService';
+import { type MediaLibrary, serveMedia } from './mediaService';
 
 /**
  * Must run before the app is ready. `stream` is what lets `<audio>` seek.
@@ -19,7 +18,7 @@ export function registerMediaScheme(): void {
 }
 
 /** Electron protocol handler. Resolving and streaming live in `serveMedia`. */
-export function handleMediaProtocol(libraries: LibraryManager): void {
+export function handleMediaProtocol(libraries: MediaLibrary): void {
   protocol.handle(MEDIA_SCHEME, async (request) => {
     const result = await serveMedia(request.url, request.headers.get('range'), libraries);
     const body = result.body === null ? null : (Readable.toWeb(result.body) as ReadableStream<Uint8Array>);

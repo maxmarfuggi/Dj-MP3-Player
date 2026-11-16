@@ -1,11 +1,23 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { readAiffAsWav, readAiffPcm, wavSize } from '../src/main/aiff';
 import { LIBRARY_FORMATS, listCases, readExpected, readVolume, volumeNameOf } from './helpers/fixtures';
 
-describe('library fixtures', () => {
+/** The release check runs without a compiled core. Rust CI and `npm run test:node` still compare these. */
+function coreIsBuilt(): boolean {
+  try {
+    const require = createRequire(import.meta.url);
+    const binding = require('djusb-node') as { readVolume?: unknown };
+    return typeof binding.readVolume === 'function';
+  } catch {
+    return false;
+  }
+}
+
+describe.skipIf(!coreIsBuilt())('library fixtures', () => {
   const cases = LIBRARY_FORMATS.flatMap((format) => listCases(format));
 
   it('has fixtures for every format', () => {
@@ -21,7 +33,7 @@ describe('library fixtures', () => {
 
 // Copies of real USBs, made with `npm run fixtures -- capture`. They are not committed.
 const localCases = listCases('local');
-describe.skipIf(localCases.length === 0)('local USB fixtures', () => {
+describe.skipIf(!coreIsBuilt() || localCases.length === 0)('local USB fixtures', () => {
   it.each(localCases.map((fixture) => [fixture.name, fixture] as const))('%s', async (_name, fixture) => {
     expect(await readVolume(fixture.volumePath, volumeNameOf(fixture))).toEqual(readExpected(fixture));
   });

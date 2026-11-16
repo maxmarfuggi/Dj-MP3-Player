@@ -1,8 +1,8 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
-import { adapters } from '../../src/main/adapters';
-import { libraryId } from '../../src/main/adapters/types';
-import type { Library, LibrarySource } from '../../src/shared/types';
+import type { Library, LibrarySource, LibraryState } from '../../src/shared/types';
 
 /** Stands in for the absolute path of a fixture's `volume` folder in `expected.json`. */
 export const VOLUME_PATH_PLACEHOLDER = '{volume}';
@@ -14,7 +14,7 @@ export const LIBRARY_FORMATS = ['rekordbox', 'deviceLibraryPlus', 'serato'] as c
 /** What `expected.json` holds: every library the app finds on the volume. */
 export interface ExpectedVolume {
   volumeName: string;
-  /** In the order the adapters run: rekordbox, Device Library Plus, Serato. */
+  /** In the order the core reads them: rekordbox, Device Library Plus, Serato. */
   libraries: Library[];
   /** Sources whose export is present but could not be read. */
   errors: LibrarySource[];
@@ -53,19 +53,31 @@ export function listCases(group: string): FixtureCase[] {
     });
 }
 
-/** Runs every adapter on a volume the way the app does, with machine-specific values replaced. */
+/**
+ * Reads a volume with the Rust core, the way the app does, and replaces the
+ * machine-specific path and id so the result can be written to `expected.json`.
+ */
 export async function readVolume(volumePath: string, volumeName: string): Promise<ExpectedVolume> {
-  const result: ExpectedVolume = { volumeName, libraries: [], errors: [] };
-  for (const adapter of adapters) {
-    try {
-      if (!(await adapter.detect(volumePath))) continue;
-      const library = await adapter.load({ path: volumePath, name: volumeName });
-      result.libraries.push(withPlaceholders(library, volumePath));
-    } catch {
-      result.errors.push(adapter.source);
-    }
+  const state = readWithCore(volumePath, volumeName);
+  return {
+    volumeName,
+    libraries: state.libraries.map((library) => withPlaceholders(library, volumePath)),
+    errors: state.errors.map((error) => error.source),
+  };
+}
+
+function readWithCore(volumePath: string, volumeName: string): LibraryState {
+  const require = createRequire(import.meta.url);
+  const binding = require('djusb-node') as { readVolume?: (path: string, name: string) => LibraryState };
+  if (typeof binding.readVolume !== 'function') {
+    throw new Error('The library core is not built. Run npm run build:node from the repository root.');
   }
-  return JSON.parse(JSON.stringify(result)) as ExpectedVolume;
+  return binding.readVolume(volumePath, volumeName);
+}
+
+function libraryId(source: LibrarySource, volumePath: string): string {
+  const hash = createHash('sha1').update(volumePath).digest('hex').slice(0, 12);
+  return `${source}-${hash}`;
 }
 
 function withPlaceholders(library: Library, volumePath: string): Library {

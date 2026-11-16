@@ -1,16 +1,42 @@
-import { createCipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createHmac, pbkdf2, randomBytes } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import {
-  PAGE_SIZE,
-  RESERVED_SIZE,
-  SALT_SIZE,
-  type SqlCipherKeys,
-  deriveKeys,
-  pageHmac,
-} from '../../src/main/adapters/rekordbox/sqlcipher';
+import { promisify } from 'node:util';
+
+const pbkdf2Async = promisify(pbkdf2);
+
+/** SQLCipher 4 defaults, which is what Device Library Plus exports use. */
+export const PAGE_SIZE = 4096;
+export const SALT_SIZE = 16;
+const KDF_ITERATIONS = 256_000;
+const HMAC_KDF_ITERATIONS = 2;
+const HMAC_SALT_MASK = 0x3a;
+const KEY_SIZE = 32;
+const IV_SIZE = 16;
+const HMAC_SIZE = 64;
+/** The IV and HMAC at the end of every page. */
+export const RESERVED_SIZE = IV_SIZE + HMAC_SIZE;
+
+export interface SqlCipherKeys {
+  encryption: Buffer;
+  hmac: Buffer;
+}
+
+export async function deriveKeys(passphrase: string, salt: Buffer): Promise<SqlCipherKeys> {
+  const encryption = await pbkdf2Async(passphrase, salt, KDF_ITERATIONS, KEY_SIZE, 'sha512');
+  const hmacSalt = Buffer.from(salt.map((byte) => byte ^ HMAC_SALT_MASK));
+  const hmac = await pbkdf2Async(encryption, hmacSalt, HMAC_KDF_ITERATIONS, KEY_SIZE, 'sha512');
+  return { encryption, hmac };
+}
+
+/** HMAC over the encrypted page content and IV, followed by the page number. */
+export function pageHmac(keys: SqlCipherKeys, contentAndIv: Buffer, pageNumber: number): Buffer {
+  const number = Buffer.alloc(4);
+  number.writeUInt32LE(pageNumber);
+  return createHmac('sha512', keys.hmac).update(contentAndIv).update(number).digest();
+}
 
 const RESERVED_SIZE_OFFSET = 20;
 /** Where page 1's b-tree header records the start of its (still empty) cell content area. */

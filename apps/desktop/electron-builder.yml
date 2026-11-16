@@ -9,6 +9,15 @@ files:
   - package.json
   - "!**/*.map"
 asar: true
+# The loader and its .node file. A native addon cannot be read from inside the
+# app archive, so this copy lives beside it and the main process loads that.
+extraResources:
+  - from: ../../crates/djusb-node
+    to: djusb-node
+    filter:
+      - package.json
+      - index.js
+      - "*.node"
 # The UI libraries are bundled into out/ by electron-vite, so they are
 # devDependencies and this skips rebuilding native modules.
 npmRebuild: false

@@ -22,3 +22,10 @@ jobs:
         run: cargo test --workspace
       - name: Licences
         uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Node bridge
+        run: node crates/djusb-node/scripts/check-binary.cjs --self-test && npm run build -w djusb-node && npm test -w djusb-node

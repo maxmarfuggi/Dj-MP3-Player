@@ -2,6 +2,10 @@ node_modules/
 target/
 out/
 dist/
+crates/djusb-node/*.node
+crates/djusb-node/index.js
+crates/djusb-node/index.d.ts
+crates/djusb-node/.napi-rs-filesystem-transaction*
 .DS_Store
 *.log
 # Copies of real USBs hold personal track and playlist names.

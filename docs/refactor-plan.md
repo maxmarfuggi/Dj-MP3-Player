@@ -138,7 +138,7 @@ version.
     AppImage and `.deb` packages.
   - *Done when:* installers build locally and the installed app runs.
 
-- [ ] **D.2 Release builds in CI** · 1–2 days · after D.1
+- [x] **D.2 Release builds in CI** · 1–2 days · after D.1
   - A GitHub Actions workflow builds and publishes installers to GitHub
     Releases when a version tag is pushed.
   - *Done when:* pushing a tag produces a release with all installers.
@@ -207,15 +207,15 @@ Produces exactly the same `Library` output as TypeScript on every fixture.
 Not needed for the wall player, so it can wait until after the device ships
 if time is short.
 
-- [ ] **2.1 napi-rs bridge** · 3–5 days · after Phase 1
+- [x] **2.1 napi-rs bridge** · 3–5 days · after Phase 1
   - `crates/djusb-node` exposes the library manager and the media service to
     Electron's main process.
-- [ ] **2.2 Prebuilt binaries** · 2–4 days · after 2.1 and D.2
+- [x] **2.2 Prebuilt binaries** · 2–4 days · after 2.1 and D.2
   - Build the bridge for Windows, macOS and Linux on x64 and ARM64 in the
     release workflow.
-- [ ] **2.3 Comparison run** · 2–3 days · after 2.2
+- [x] **2.3 Comparison run** · 2–3 days · after 2.2
   - Behind a setting, run both cores and log any difference on real USBs.
-- [ ] **2.4 Remove the TypeScript readers** · 1 day · after 2.3
+- [x] **2.4 Remove the TypeScript readers** · 1 day · after 2.3
   - Once no differences remain. The fixtures stay as the shared tests.
 
 ## Phase 3: device foundations

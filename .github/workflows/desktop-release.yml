@@ -59,6 +59,22 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Strawberry Perl
+        if: runner.os == 'Windows'
+        # OpenSSL's Configure refuses the Perl that ships with Git.
+        # 3010 means Chocolatey finished and wants a reboot, which the
+        # runner does not need before the build.
+        run: |
+          choco.exe install strawberryperl --no-progress -y || status=$?
+          if [ "${status:-0}" -ne 0 ] && [ "${status:-0}" -ne 3010 ]; then
+            exit "$status"
+          fi
+      - name: Build the library core
+        # The installer ships this copy. The native job still builds the
+        # other architectures and publishes those binaries on the release.
+        run: npm run build -w djusb-node -- --release
       - name: Build installers
         # The dist scripts pass --publish never. A tag would otherwise make
         # electron-builder publish, and the release job uploads the files.
@@ -92,9 +108,98 @@ jobs:
           path: installers/*
           if-no-files-found: error
 
+  native:
+    name: bridge ${{ matrix.name }}
+    needs: check
+    runs-on: ${{ matrix.host }}
+    env:
+      # The generated napi workflow pins this so a macOS binary loads on
+      # older releases. It has no effect on Windows or Linux.
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            host: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: djusb-node.win32-x64-msvc.node
+            test: true
+          - name: Windows ARM64
+            host: windows-latest
+            target: aarch64-pc-windows-msvc
+            artifact: djusb-node.win32-arm64-msvc.node
+            test: false
+          - name: macOS x64
+            host: macos-latest
+            target: x86_64-apple-darwin
+            artifact: djusb-node.darwin-x64.node
+            test: false
+          - name: macOS ARM64
+            host: macos-latest
+            target: aarch64-apple-darwin
+            artifact: djusb-node.darwin-arm64.node
+            test: true
+          - name: Linux x64
+            host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: djusb-node.linux-x64-gnu.node
+            flags: '--use-napi-cross'
+            check: '--glibc 2.17'
+            test: true
+          - name: Linux ARM64
+            host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact: djusb-node.linux-arm64-gnu.node
+            flags: '--use-napi-cross'
+            check: '--glibc 2.17'
+            test: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.target }}
+          cache-directories: ~/.napi-rs
+      - name: Install Strawberry Perl
+        if: runner.os == 'Windows'
+        # OpenSSL's Configure refuses the Perl that ships with Git.
+        # 3010 means Chocolatey finished and wants a reboot, which the
+        # runner does not need before the build.
+        run: |
+          choco.exe install strawberryperl --no-progress -y || status=$?
+          if [ "${status:-0}" -ne 0 ] && [ "${status:-0}" -ne 3010 ]; then
+            exit "$status"
+          fi
+      - run: npm ci
+      - name: Check the binary checker
+        run: node crates/djusb-node/scripts/check-binary.cjs --self-test
+      - name: Build the bridge
+        # Linux uses the napi gcc toolchain, which links glibc 2.17.
+        # Windows and macOS compile the other architecture with the
+        # compiler already on the runner.
+        run: npm run build -w djusb-node -- --release --target "${{ matrix.target }}" ${{ matrix.flags }}
+      - name: Check the binary
+        run: node crates/djusb-node/scripts/check-binary.cjs "crates/djusb-node/${{ matrix.artifact }}" ${{ matrix.check }}
+      - name: Test the bridge
+        # The other architecture cannot be loaded on this runner.
+        if: matrix.test
+        run: npm test -w djusb-node
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bindings-${{ matrix.target }}
+          path: crates/djusb-node/${{ matrix.artifact }}
+          if-no-files-found: error
+
   release:
     name: GitHub Release
-    needs: build
+    needs: [build, native]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -104,22 +209,33 @@ jobs:
           pattern: desktop-*
           merge-multiple: true
           path: installers
-      - name: Require every installer
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bindings-*
+          merge-multiple: true
+          path: bindings
+      - name: Require every installer and bridge binary
         run: |
           version="${GITHUB_REF_NAME#v}"
           missing=0
           for file in \
-            "dj-mp3-player-${version}-setup.exe" \
-            "dj-mp3-player-${version}.dmg" \
-            "dj-mp3-player-${version}.AppImage" \
-            "dj-mp3-player-${version}.deb"
+            "installers/dj-mp3-player-${version}-setup.exe" \
+            "installers/dj-mp3-player-${version}.dmg" \
+            "installers/dj-mp3-player-${version}.AppImage" \
+            "installers/dj-mp3-player-${version}.deb" \
+            "bindings/djusb-node.win32-x64-msvc.node" \
+            "bindings/djusb-node.win32-arm64-msvc.node" \
+            "bindings/djusb-node.darwin-x64.node" \
+            "bindings/djusb-node.darwin-arm64.node" \
+            "bindings/djusb-node.linux-x64-gnu.node" \
+            "bindings/djusb-node.linux-arm64-gnu.node"
           do
-            if [ ! -f "installers/$file" ]; then
+            if [ ! -f "$file" ]; then
               echo "::error::Missing $file"
               missing=1
             fi
           done
-          ls -l installers
+          ls -l installers bindings
           exit "$missing"
       - name: Publish
         env:
@@ -135,11 +251,13 @@ jobs:
           - Linux (x64): \`dj-mp3-player-${version}.AppImage\` and \`dj-mp3-player-${version}.deb\`.
 
           These builds are not code-signed. To update, download the new installer.
+
+          The \`djusb-node.*.node\` files are the library bridge for Windows, macOS, and Linux, each on x64 and ARM64.
           EOF
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" installers/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$GITHUB_REF_NAME" installers/* bindings/* --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" installers/* \
+            gh release create "$GITHUB_REF_NAME" installers/* bindings/* \
               --repo "$GITHUB_REPOSITORY" \
               --title "DJ MP3 Player ${version}" \
               --notes-file "$notes"

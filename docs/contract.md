@@ -223,9 +223,11 @@ as compressed AIFF-C.
 
 `npm run fixtures` rebuilds every case from the test builders in
 `apps/desktop/tests/helpers`. The same input always produces the same bytes.
-`expected.json` and `expected.wav` come from the current TypeScript code, so
-a change to how a library is read shows up as a diff in them, and that diff is
-reviewed with the change.
+`expected.json` is what the Rust core reads from that volume. `expected.wav`
+is what the desktop's AIFF converter serves. A change to either shows up as a
+diff, and that diff is reviewed with the change.
+
+The Rust tests and `npm run test:node` compare a volume with its `expected.json`.
 
 `npm run fixtures -- capture <volume> <name>` copies the library files of a
 real USB (the rekordbox databases, `PIONEER/Artwork`, and Serato's database

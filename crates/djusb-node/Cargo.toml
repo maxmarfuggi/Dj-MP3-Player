@@ -1,0 +1,27 @@
+[package]
+name = "djusb-node"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "Node bridge from the desktop app to djusb-core."
+
+[lib]
+crate-type = ["cdylib"]
+
+# The workspace forbids unsafe code. napi-rs generates the Node-API glue, and
+# that glue is unsafe. Workspace lints cannot be inherited and overridden
+# together, so the clippy level is repeated here.
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[dependencies]
+djusb-core = { path = "../djusb-core" }
+napi = { version = "3.16.2", features = ["serde-json"] }
+napi-derive = "3.7.1"
+serde_json = "1.0.154"
+
+[build-dependencies]
+napi-build = "2.6.0"

@@ -3,10 +3,13 @@
   "private": true,
   "description": "Workspace for the DJ MP3 Player",
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "crates/djusb-node"
   ],
   "scripts": {
     "dev": "npm run dev -w dj-mp3-player",
+    "build:node": "npm run build -w djusb-node",
+    "test:node": "npm test -w djusb-node",
     "build": "npm run build -w dj-mp3-player",
     "start": "npm run start -w dj-mp3-player",
     "dist": "npm run dist -w dj-mp3-player",

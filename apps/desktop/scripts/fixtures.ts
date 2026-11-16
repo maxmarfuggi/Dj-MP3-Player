@@ -6,13 +6,12 @@
  *                                             Copies the library files of a real USB into
  *                                             `fixtures/local/<name>` (gitignored). The USB is only read.
  *
- * Both write `expected.json` from what today's readers produce, so review its diff.
+ * Both write `expected.json` from what the Rust core reads, so review its diff.
  */
 import { createHash } from 'node:crypto';
 import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { DEVICE_LIBRARY_PLUS_KEY } from '../src/main/adapters/rekordbox/deviceLibraryPlus';
 import { readAiffAsWav, readAiffPcm, wavSize } from '../src/main/aiff';
 import { type AiffSpec, buildAiff } from '../tests/helpers/aiffBuilder';
 import { applyLateChanges, fillBasicLibrary } from '../tests/helpers/deviceLibraryPlusBuilder';
@@ -36,8 +35,11 @@ import {
   pageOf,
   plainDatabase,
   walFile,
+  PAGE_SIZE,
 } from '../tests/helpers/sqlcipherBuilder';
-import { PAGE_SIZE } from '../src/main/adapters/rekordbox/sqlcipher';
+
+/** The Device Library Plus passphrase. Every export uses it. See docs/contract.md. */
+const DEVICE_LIBRARY_PLUS_KEY = 'r8gddnr4k847830ar6cqzbkk0el6qytmb3trbbx805jm74vez64i5o8fnrqryqls';
 
 /** Files a volume holds, by path relative to its root. */
 type VolumeFiles = Record<string, Buffer | string>;

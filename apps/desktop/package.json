@@ -9,14 +9,17 @@
     "url": "https://github.com/maxmarfuggi/Dj-MP3-Player.git"
   },
   "main": "./out/main/index.js",
+  "dependencies": {
+    "djusb-node": "0.1.0"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "dist": "npm run build && electron-builder --publish never",
-    "dist:win": "npm run build && electron-builder --win --publish never",
-    "dist:mac": "npm run build && electron-builder --mac --publish never",
-    "dist:linux": "npm run build && electron-builder --linux --publish never",
+    "dist": "npm run build && node scripts/check-native.cjs && electron-builder --publish never",
+    "dist:win": "npm run build && node scripts/check-native.cjs && electron-builder --win --publish never",
+    "dist:mac": "npm run build && node scripts/check-native.cjs && electron-builder --mac --publish never",
+    "dist:linux": "npm run build && node scripts/check-native.cjs && electron-builder --linux --publish never",
     "typecheck": "tsc -p . && tsc -p src/renderer",
     "test": "vitest run",
     "fixtures": "tsx scripts/fixtures.ts"

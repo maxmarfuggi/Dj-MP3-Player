@@ -6,13 +6,19 @@ and play its tracks, like a regular music player. This is a proof of concept.
 
 ## Running it
 
-Requires Node.js 22.13 or newer (the tests use the built-in `node:sqlite`).
+Requires Node.js 22.13 or newer (the fixture script uses the built-in
+`node:sqlite`).
+
+Libraries are read by the Rust core. Build it once, and again after that code
+changes:
 
 ```sh
 npm install
-npm run dev      # run with hot reload
-npm start        # build and run the production build
-npm test         # unit tests
+npm run build:node
+npm run dev         # run with hot reload
+npm start           # build and run the production build
+npm test            # desktop unit tests
+npm run test:node   # library fixtures through the core
 npm run typecheck
 ```
 
@@ -22,24 +28,21 @@ a copy of a USB on disk.
 
 ## How it works
 
-The app is Electron with a React UI.
+The app is Electron with a React UI. Library files are read by the Rust core
+in `crates/djusb-core`, which the main process loads through `crates/djusb-node`.
 
-- `apps/desktop/src/main/volumes.ts` lists mounted volumes and `apps/desktop/src/main/libraryManager.ts`
-  polls them, loading any DJ library it finds and dropping it when the volume
-  goes away.
-- `apps/desktop/src/main/adapters/` has one adapter per library format. Each turns its
-  format into the same `Library` model (`apps/desktop/src/shared/types.ts`), so the UI and
-  the player do not know which software wrote the USB.
-  - **rekordbox Device Library**: reads `PIONEER/rekordbox/export.pdb` with
-    the parser in `adapters/rekordbox/pdb.ts`.
-  - **rekordbox Device Library Plus**: reads `PIONEER/rekordbox/exportLibrary.db`
-    (`adapters/rekordbox/deviceLibraryPlus.ts`). It is a SQLCipher-encrypted
-    SQLite database with a key shared by every export.
-    `adapters/rekordbox/sqlcipher.ts` decrypts it in memory (applying any
-    `-wal` file), and the plain copy is written to a temp folder only while
-    `node:sqlite` reads it. This export also provides genre, label, track
-    colour and artwork. A USB usually carries both exports, and they can
-    differ, so each appears as its own library.
+- The core watches mounted volumes, loads any DJ library it finds, and drops
+  it when the volume goes away. Each format becomes the same `Library` model
+  (`apps/desktop/src/shared/types.ts`), so the UI and the player do not know
+  which software wrote the USB.
+  - **rekordbox Device Library**: reads `PIONEER/rekordbox/export.pdb`.
+  - **rekordbox Device Library Plus**: reads `PIONEER/rekordbox/exportLibrary.db`.
+    It is a SQLCipher-encrypted SQLite database with a key shared by every
+    export. The core decrypts it in memory (applying any `-wal` file), and the
+    plain copy is written to a temporary folder only while it is queried.
+    This export also provides genre, label, track colour and artwork. A USB
+    usually carries both exports, and they can differ, so each appears as its
+    own library.
   - **Serato**: reads `_Serato_/database V2` and the crates in
     `_Serato_/Subcrates`.
 - `apps/desktop/src/main/mediaProtocol.ts` serves audio to the UI as

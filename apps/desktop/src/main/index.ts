@@ -2,8 +2,8 @@ import path from 'node:path';
 import { BrowserWindow, app, dialog, ipcMain, nativeTheme } from 'electron';
 import type { LibraryState, OpenFolderResult } from '../shared/types';
 import { IPC } from '../shared/ipc';
-import { LibraryManager } from './libraryManager';
 import { handleMediaProtocol, registerMediaScheme } from './mediaProtocol';
+import { loadCore } from './nativeCore';
 
 registerMediaScheme();
 // The UI is dark only, so dialogs, menus and the Windows title bar should be too.
@@ -11,6 +11,7 @@ nativeTheme.themeSource = 'dark';
 
 let mainWindow: BrowserWindow | null = null;
 
+const { LibraryManager } = loadCore();
 const libraries = new LibraryManager((state: LibraryState) => {
   mainWindow?.webContents.send(IPC.stateChanged, state);
 });
@@ -63,9 +64,7 @@ async function openFolder(): Promise<OpenFolderResult> {
   });
   const folderPath = filePaths[0];
   if (canceled || folderPath === undefined) return { status: 'cancelled' };
-  return (await libraries.addFolder(folderPath))
-    ? { status: 'opened' }
-    : { status: 'no-library', folderPath };
+  return libraries.addFolder(folderPath) ? { status: 'opened' } : { status: 'no-library', folderPath };
 }
 
 void app.whenReady().then(() => {
