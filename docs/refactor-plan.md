@@ -4,8 +4,9 @@ Two products share one core:
 
 - **Desktop app:** Electron and React, as today. It gets installers and
   automatic updates.
-- **Wall player:** a Rust app on a Raspberry Pi, with an iced UI, two knobs,
-  Bluetooth audio and MilkDrop through projectM.
+- **Wall player:** a Rust app on a Raspberry Pi, with an iced UI, a platter
+  and a select key, Bluetooth audio and MilkDrop through projectM. The
+  screen shows the UI and is not used as a touch control.
 - **Shared core:** a Rust library that reads rekordbox and Serato USBs. Both
   apps use it, so there is one copy of the hardest code.
 
@@ -52,13 +53,41 @@ docs/             This plan, the data contract, design tokens, licence notices
 | Area | Choice | Licence |
 | --- | --- | --- |
 | Shared core and device app | Rust | — |
-| Device UI | iced (confirmed by spike A) | MIT |
+| Device UI | iced | MIT |
 | MilkDrop on the device | projectM, linked as a shared library | LGPL 2.1 |
 | Desktop to core | napi-rs | MIT |
 | Device audio | symphonia to decode, cpal or PipeWire to play | MPL 2.0 / Apache 2.0 |
 | Encrypted rekordbox database | rusqlite with bundled SQLCipher | MIT / BSD |
 | Device system | Raspberry Pi OS Lite, cage kiosk, udisks2, bluer, gpiocdev | Free |
+| Device input | Platter turns, round key selects a row | — |
 | Desktop updates | electron-builder and electron-updater, published to GitHub Releases | MIT |
+
+## Device controls
+
+The wall player uses the club shell in `hardware/cdj-shell/`. One encoder
+sits under the platter and one momentary switch sits under the round key.
+The 7" panel is a display only.
+
+The platter and the key each do one thing:
+
+- **Turn** moves the highlight.
+- **Press** activates the highlighted row.
+
+Every screen pins a row to the top. On a screen opened from another, that
+row is named for the screen it returns to, such as **‹ Tracks** or
+**‹ House**. One detent up from the first item lands on it, and it stays
+put while the list scrolls. The home screen is the USB list, and its top
+row is **Settings**.
+
+Now playing is the same kind of list, shown under the artwork: **‹ Tracks**,
+**Play** or **Pause**, **Volume**, **Visualizer**. Selecting **Volume**
+opens the level. The platter changes it, and the top row returns to now
+playing and keeps the value. Playback continues while you browse.
+
+A fast turn skips several rows. During development the arrow keys turn and
+Enter presses. On the Pi the platter is the encoder on GPIO 17 and GPIO 27,
+and the round key is the switch on GPIO 25. The encoder's own shaft switch
+is left unwired.
 
 ---
 
@@ -143,26 +172,6 @@ version.
     Releases when a version tag is pushed.
   - *Done when:* pushing a tag produces a release with all installers.
 
-## Spikes on the Pi
-
-Short experiments that confirm the device choices before real effort goes
-in. Run them alongside Phase 0. Each is throwaway code.
-
-- [ ] **A. iced feel test** · 2–3 days
-  - A track list scrolled by a knob (or the keyboard) and a spinning record,
-    cross-compiled to the Pi.
-  - *Answers:* is iced smooth enough, how much memory does it use, or should
-    the UI use Flutter instead?
-
-- [ ] **B. projectM test** · 2–3 days
-  - projectM full-screen with a few presets, fed by a test track.
-  - *Answers:* frame rate at 720p and at a reduced internal resolution, and
-    which preset packs can legally ship.
-
-- [ ] **C. Audio test** · 2–3 days
-  - symphonia and cpal playing through PipeWire to a Bluetooth speaker.
-  - *Answers:* delay, gaps between tracks, and dropouts.
-
 ## Phase 1: the Rust core
 
 Produces exactly the same `Library` output as TypeScript on every fixture.
@@ -222,14 +231,15 @@ if time is short.
 
 On the Pi, list a USB and play it.
 
-- [ ] **3.1 App skeleton** · 2–3 days · after Phase 1 readers and spike A
+- [ ] **3.1 App skeleton** · 2–3 days · after Phase 1
   - `apps/device`, an iced app that also runs on Windows for development.
     Cross-compile for the Pi with `cross` or `cargo-zigbuild`.
 - [ ] **3.2 Input layer** · 2–3 days · after 3.1
-  - Knob events (browse turned, pressed and held; volume turned and
-    pressed) from the keyboard during development and from GPIO through
-    `gpiocdev` on the Pi, with debouncing and speed-up for fast turns.
-- [ ] **3.3 Playback engine** · 6–10 days · after 3.1 and spike C
+  - Turn and press, as in [Device controls](#device-controls). On the Pi,
+    read the platter encoder and the round key through `gpiocdev`. During
+    development the arrow keys turn and Enter presses. Debounce the switch,
+    and skip rows when the platter is turned quickly.
+- [ ] **3.3 Playback engine** · 6–10 days · after 3.1
   - Decode with symphonia, play through cpal or PipeWire. Queue, seek,
     volume, and a copy of the audio for the visualizers through a ring
     buffer.
@@ -244,14 +254,17 @@ On the Pi, list a USB and play it.
 
 ## Phase 4: device UI
 
-The full experience with two knobs and the desktop's look.
+The full experience, driven by the platter and the select key, with the
+desktop's look.
 
 - [ ] **4.1 Design tokens** · 1–2 days · after 3.1
   - One tokens file for colours, fonts and spacing, generating CSS variables
     for the desktop and Rust constants for the device.
 - [ ] **4.2 Screens** · 8–12 days · after 3.2 and 4.1
   - USB sources, playlists, tracks, now playing, visualizers, and settings
-    (Bluetooth, volume limit, about and licences).
+    (Bluetooth, volume limit, about and licences). Each screen follows
+    [Device controls](#device-controls): one highlighted row, a pinned top
+    row, and type large enough to read from the wall.
 - [ ] **4.3 Turntable** · 4–6 days · after 4.2
   - Render the deck's static parts from the existing SVG to images with
     `resvg`. Animate the record and tonearm in iced, reusing the maths in
@@ -259,12 +272,13 @@ The full experience with two knobs and the desktop's look.
 - [ ] **4.4 Waveform and equalizer** · 3–5 days · after 3.3
   - Port `Waveform.tsx` and `equalizerBands.ts`, fed by the audio copy and
     `rustfft`.
-- [ ] **4.5 MilkDrop** · 4–8 days · after spike B and 3.3
+- [ ] **4.5 MilkDrop** · 4–8 days · after 3.3
   - projectM as a separate full-screen mode at a reduced resolution, with
     preset pack choice. Follow the LGPL: shared library, notices, source
     offer.
 
-*Phase done when:* a whole browse-and-play session works with only the knobs.
+*Phase done when:* a whole browse-and-play session works with the platter
+and the select key, including leaving every screen through its top row.
 
 ## Phase 5: appliance
 
@@ -275,8 +289,9 @@ The full experience with two knobs and the desktop's look.
 - [ ] **5.2 USB auto-mount** · 2–3 days · after 5.1
   - udisks2, forced read-only, with FAT32, exFAT and HFS+.
 - [ ] **5.3 Bluetooth** · 4–6 days · after 4.2
-  - bluer: scan, pair, connect, reconnect automatically, set the speaker as
-    the default output, and a pairing screen.
+  - bluer: scan, pair, connect, reconnect automatically, and set the speaker
+    as the default output. Pairing is a list on the settings screen: the
+    platter moves the highlight and the key connects.
 - [ ] **5.4 Licence notices** · 1–2 days · after Phase 4
   - A `cargo-deny` report and a generated notices screen.
 - [ ] **5.5 Updates from a USB stick** · 3–5 days · after 5.1
@@ -317,35 +332,32 @@ earlier whenever the install warnings start costing users.
 | --- | --- |
 | Phase 0: groundwork | 6–10 |
 | Track D: desktop releases | 2–4 |
-| Spikes A–C | 6–9 |
 | Phase 1: Rust core | 18–30 |
 | Phase 2: desktop on the Rust core | 8–13 |
 | Phase 3: device foundations | 13–21 |
 | Phase 4: device UI | 20–33 |
 | Phase 5: appliance | 14–23 |
 | Phase 6: desktop signing and automatic updates | 4–7, plus waiting for Windows signing approval |
-| **Total** | **91–150** |
+| **Total** | **85–141** |
 
 **Milestones:**
 
 | Milestone | Pieces | Focused days |
 | --- | --- | --- |
 | Desktop app released (unsigned, manual updates) | 0.1 and Track D | about 3–5 |
-| Device choices confirmed | Spikes A–C | about 6–9 |
-| Wall player plays music from a USB | Phase 0, spikes, Phase 1, Phase 3 | about 43–70 |
-| Wall player feature-complete | plus Phase 4 | about 63–103 |
-| Wall player ready as an appliance | plus Phase 5 | about 77–126 |
+| Wall player plays music from a USB | Phase 0, Phase 1, Phase 3 | about 37–61 |
+| Wall player feature-complete | plus Phase 4 | about 57–94 |
+| Wall player ready as an appliance | plus Phase 5 | about 71–117 |
 | Desktop running on the shared core | plus Phase 2 | about 8–13 more |
 | Desktop signed, with automatic updates | plus Phase 6 | about 4–7 more |
 
 **In calendar time:**
 
-- **Full-time** (about 5 focused days a week): roughly 4–7 months for
+- **Full-time** (about 5 focused days a week): roughly 4–6 months for
   everything.
-- **Part-time** (about 2 focused days a week): roughly 11–18 months for
+- **Part-time** (about 2 focused days a week): roughly 10–16 months for
   everything, but the first desktop release lands in about 2–3 weeks and a
-  music-playing wall player in about 5–8 months.
+  music-playing wall player in about 4–7 months.
 
 The ranges are wide because the biggest unknowns are learning Rust, the
-playback engine, and how the Pi performs. The spikes narrow them, so revisit
-the estimates after spikes A–C.
+playback engine, and how the Pi performs.
