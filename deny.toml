@@ -1,0 +1,48 @@
+# Licence and supply-chain checks for the Rust workspace.
+# `cargo deny check` fails the build when a dependency falls outside these rules.
+
+[graph]
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "aarch64-unknown-linux-gnu" },
+    { triple = "x86_64-apple-darwin" },
+    { triple = "aarch64-apple-darwin" },
+    { triple = "x86_64-pc-windows-msvc" },
+    { triple = "aarch64-pc-windows-msvc" },
+]
+
+[advisories]
+yanked = "deny"
+
+[licenses]
+# The workspace crate is this project's own code and is not published.
+private = { ignore = true }
+# The allow list is the policy for later crates, so an empty graph is fine.
+unused-allowed-license = "allow"
+# The licences named in the plan's decisions, plus the small permissive
+# licences that ordinary Rust crates carry (Unicode data, CC0, Unlicense).
+# projectM is LGPL and is linked as a shared library, so it never appears here.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "Unlicense",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+# crates.io is the only registry, and it is unused until the first dependency.
+unused-allowed-source = "allow"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

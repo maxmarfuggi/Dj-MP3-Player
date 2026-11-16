@@ -167,7 +167,7 @@ in. Run them alongside Phase 0. Each is throwaway code.
 
 Produces exactly the same `Library` output as TypeScript on every fixture.
 
-- [ ] **1.1 Cargo workspace and CI** · 1 day · after 0.1
+- [x] **1.1 Cargo workspace and CI** · 1 day · after 0.1
   - `crates/djusb-core`, with `cargo test`, `clippy`, `fmt` and `cargo-deny`
     (licence checks) in CI.
 - [ ] **1.2 Data model** · 1–2 days · after 0.3
