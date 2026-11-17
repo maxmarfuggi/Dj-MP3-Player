@@ -26,6 +26,38 @@ A USB with a library is picked up automatically within a couple of seconds of
 mounting. **Open folder…** loads a library from any folder, which is useful for
 a copy of a USB on disk.
 
+## Wall player
+
+`apps/device` is the wall player. It is an iced window, and it reads libraries
+through the same Rust core as the desktop app. Run it on this computer with:
+
+```sh
+cargo run -p djusb-device
+```
+
+The window opens at the 7" panel size, turned landscape to 1280×720. It lists a rekordbox or
+Serato USB when one is mounted. Pressing an export plays its tracks in order
+through the default audio output, and pressing it again pauses. A Linux build
+needs ALSA's development package (`libasound2-dev`); on the Pi, PipeWire
+serves ALSA's default output, so wired and Bluetooth speakers both work.
+
+The player's own tests include one that plays through this computer's output.
+It is skipped by default:
+
+```sh
+cargo test -p djusb-device -- --ignored
+```
+
+A 64-bit Raspberry Pi build uses [`cross`](https://github.com/cross-rs/cross),
+which supplies the Wayland and ALSA libraries the app links against:
+
+```sh
+cargo install cross --locked
+cross build --release -p djusb-device --target aarch64-unknown-linux-gnu
+```
+
+The binary is `target/aarch64-unknown-linux-gnu/release/djusb-device`.
+
 ## How it works
 
 The app is Electron with a React UI. Library files are read by the Rust core

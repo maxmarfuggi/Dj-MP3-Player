@@ -231,15 +231,15 @@ if time is short.
 
 On the Pi, list a USB and play it.
 
-- [ ] **3.1 App skeleton** · 2–3 days · after Phase 1
+- [x] **3.1 App skeleton** · 2–3 days · after Phase 1
   - `apps/device`, an iced app that also runs on Windows for development.
     Cross-compile for the Pi with `cross` or `cargo-zigbuild`.
-- [ ] **3.2 Input layer** · 2–3 days · after 3.1
+- [x] **3.2 Input layer** · 2–3 days · after 3.1
   - Turn and press, as in [Device controls](#device-controls). On the Pi,
     read the platter encoder and the round key through `gpiocdev`. During
     development the arrow keys turn and Enter presses. Debounce the switch,
     and skip rows when the platter is turned quickly.
-- [ ] **3.3 Playback engine** · 6–10 days · after 3.1
+- [x] **3.3 Playback engine** · 6–10 days · after 3.1
   - Decode with symphonia, play through cpal or PipeWire. Queue, seek,
     volume, and a copy of the audio for the visualizers through a ring
     buffer.

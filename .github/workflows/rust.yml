@@ -14,6 +14,10 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Display and audio libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev libfontconfig1-dev libasound2-dev
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
@@ -29,3 +33,18 @@ jobs:
       - run: npm ci
       - name: Node bridge
         run: node crates/djusb-node/scripts/check-binary.cjs --self-test && npm run build -w djusb-node && npm test -w djusb-node
+
+  device-pi:
+    name: device for the Pi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - name: Build for the Pi
+        run: cross build -p djusb-device --target aarch64-unknown-linux-gnu

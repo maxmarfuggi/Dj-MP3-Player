@@ -38,7 +38,7 @@ wall = 3.4;
 rim_t = 1.6;      // lip that wraps the face
 floor_t = 4.8;    // skin against the wall; thick enough for the keyholes
 deck_t = 4.0;     // face thickness
-corner_r = 8;
+corner_r = 0;     // outside corners; 0 is a hard corner
 fit = 0.45;
 split_y = 194;    // seam between the platter and the display
 seam = 0.25;
@@ -47,7 +47,7 @@ seam = 0.25;
 disp_w = 189.5;
 disp_h = 120.2;
 disp_t = 8.6;
-disp_r = 6;
+disp_r = 0;       // screen corners; 0 is a hard corner
 window_lip = 3.5;
 screen_y0 = 208;  // bottom edge of the display, measured up from the floor
 
@@ -102,9 +102,13 @@ $fn = 64;
 inset = rim_t + fit;
 face_w = case_w - 2 * inset;
 face_h = case_h - 2 * inset;
-r_wall = max(0.8, corner_r - wall);
-r_rim = max(0.8, corner_r - rim_t);
-r_face = max(0.8, corner_r - inset);
+// A sharp outside stays sharp through the wall, the rim, and the face.
+// A rounded outside keeps a small fillet after each inset.
+function inset_r(outer, cut) = outer <= 0 ? 0 : max(0.8, outer - cut);
+r_wall = inset_r(corner_r, wall);
+r_rim = inset_r(corner_r, rim_t);
+r_face = inset_r(corner_r, inset);
+screen_r = disp_r <= 0 ? 0 : disp_r;
 well_r = jog_d / 2 + 2.2;
 screen_cx = case_w / 2;
 screen_cy = screen_y0 + disp_h / 2;
@@ -148,8 +152,12 @@ echo("lower piece height", split_y);
 // ----------------------------------------------------------------- primitives
 
 module rounded_rect(w, h, r) {
-  rr = min(r, min(w, h) / 2 - 0.05);
-  offset(r = rr) offset(delta = -rr) square([w, h]);
+  if (r <= 0.05)
+    square([w, h]);
+  else {
+    rr = min(r, min(w, h) / 2 - 0.05);
+    offset(r = rr) offset(delta = -rr) square([w, h]);
+  }
 }
 
 module rounded_rect_c(w, h, r) {
@@ -193,12 +201,12 @@ module screen_cut() {
   oh = disp_h - 2 * window_lip;
   translate([face_x(screen_cx), face_y(screen_cy), 0]) {
     translate([0, 0, -2])
-      linear_extrude(deck_t + 4) rounded_rect_c(ow, oh, disp_r);
+      linear_extrude(deck_t + 4) rounded_rect_c(ow, oh, screen_r);
     hull() {
       translate([0, 0, deck_t - 1.4])
-        linear_extrude(0.2) rounded_rect_c(ow, oh, disp_r);
+        linear_extrude(0.2) rounded_rect_c(ow, oh, screen_r);
       translate([0, 0, deck_t - 0.15])
-        linear_extrude(0.2) rounded_rect_c(ow + 2.2, oh + 2.2, disp_r + 1);
+        linear_extrude(0.2) rounded_rect_c(ow + 2.2, oh + 2.2, screen_r);
     }
   }
 }
@@ -461,7 +469,7 @@ module guts() {
   color([0.015, 0.016, 0.02])
     translate([face_x(screen_cx), face_y(screen_cy), -disp_t])
       linear_extrude(disp_t)
-        rounded_rect_c(disp_w, disp_h, disp_r);
+        rounded_rect_c(disp_w, disp_h, screen_r);
   translate([face_x(screen_cx), face_y(screen_cy) - 2, -(disp_t + 8)]) {
     color([0.07, 0.32, 0.14]) cube([85, 56, 1.6], center = true);
     color([0.55, 0.58, 0.6]) translate([0, 0, -6]) cube([36, 36, 8], center = true);
@@ -476,7 +484,7 @@ module screen_glass() {
   ow = disp_w - 2 * window_lip - 0.8;
   oh = disp_h - 2 * window_lip - 0.8;
   translate([face_x(screen_cx) - ow / 2, face_y(screen_cy) - oh / 2, deck_t - 0.5])
-    linear_extrude(0.4) rounded_rect(ow, oh, disp_r - 1);
+    linear_extrude(0.4) rounded_rect(ow, oh, screen_r);
 }
 
 // ----------------------------------------------------------------- views

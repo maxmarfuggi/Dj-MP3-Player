@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/djusb-core", "crates/djusb-node", "crates/djusb-sys"]
+members = [
+    "crates/djusb-core",
+    "crates/djusb-node",
+    "crates/djusb-sys",
+    "apps/device",
+]
 
 [workspace.package]
 edition = "2021"

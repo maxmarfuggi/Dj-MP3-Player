@@ -1,0 +1,37 @@
+[package]
+name = "djusb-device"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "Wall player for rekordbox and Serato USBs."
+
+[lints]
+workspace = true
+
+[dependencies]
+djusb-core = { path = "../../crates/djusb-core" }
+# Tokio is the executor, and it provides the timer that refreshes the list.
+# The default set is trimmed: theme detection is left off because the window
+# uses a fixed dark theme, and thread-pool is replaced by tokio.
+iced = { version = "0.14.0", default-features = false, features = [
+    "wgpu",
+    "tiny-skia",
+    "crisp",
+    "web-colors",
+    "tokio",
+    "x11",
+    "wayland",
+] }
+# Playback. symphonia decodes, rubato converts to the output's sample rate,
+# cpal plays through ALSA (and PipeWire's ALSA plugin) on the Pi and WASAPI
+# on Windows, and rtrb carries samples to the output callback without locks.
+# The default formats cover FLAC, WAV, Ogg and ID3 tags; the rest are the
+# formats rekordbox and Serato export.
+symphonia = { version = "0.6.1", features = ["mp3", "aac", "isomp4", "alac", "aiff"] }
+rubato = "5.1.0"
+cpal = "0.18.2"
+rtrb = "0.4.1"
+
+# The platter encoder and the round key. GPIO exists only on the Pi.
+[target.'cfg(target_os = "linux")'.dependencies]
+gpiocdev = "0.8.0"

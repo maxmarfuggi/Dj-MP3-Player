@@ -1,0 +1,13 @@
+# The wall player builds for a 64-bit Raspberry Pi (Raspberry Pi OS on a Pi 5).
+# `cross build --release -p djusb-device --target aarch64-unknown-linux-gnu`
+#
+# iced loads Wayland when the binary runs. While linking it looks up
+# xkbcommon, Wayland and fontconfig, and playback links ALSA, so the cross
+# image installs those development packages for the target.
+
+[target.aarch64-unknown-linux-gnu]
+xargo = false
+pre-build = [
+    "dpkg --add-architecture $CROSS_DEB_ARCH",
+    "apt-get update && apt-get install --assume-yes --no-install-recommends pkg-config libxkbcommon-dev:$CROSS_DEB_ARCH libwayland-dev:$CROSS_DEB_ARCH libfontconfig1-dev:$CROSS_DEB_ARCH libasound2-dev:$CROSS_DEB_ARCH",
+]

@@ -13,6 +13,14 @@ targets = [
 
 [advisories]
 yanked = "deny"
+ignore = [
+    # wgpu pulls `paste` through its Metal backend. The advisory is that the
+    # crate is archived, and iced has not moved off it.
+    "RUSTSEC-2024-0436",
+    # cosmic-text still parses fonts with `ttf-parser`. The advisory is that
+    # the crate is unmaintained, and iced has not switched its stack.
+    "RUSTSEC-2026-0192",
+]
 
 [licenses]
 # The workspace crate is this project's own code and is not published.
@@ -36,6 +44,8 @@ allow = [
     # SQLCipher ships SQLite under the public-domain blessing and libtomcrypt under the WTFPL.
     "blessing",
     "WTFPL",
+    # clipboard-win, which iced uses for the Windows clipboard.
+    "BSL-1.0",
 ]
 confidence-threshold = 0.8
 
