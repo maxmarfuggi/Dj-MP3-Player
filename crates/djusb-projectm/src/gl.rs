@@ -252,12 +252,17 @@ unsafe fn fn_ptr<T>(ptr: *const c_void) -> Option<T> {
     const {
         assert!(size_of::<T>() == size_of::<*const ()>());
     }
-    if ptr.is_null() || (ptr as isize).unsigned_abs() <= 3 {
+    if failed(ptr) {
         return None;
     }
     // SAFETY: the caller promised this address has signature `T`, and the
     // sizes match, so the bit pattern is that function pointer.
     Some(unsafe { std::mem::transmute_copy(&ptr) })
+}
+
+/// Null, and the 1, 2, and 3 that `wglGetProcAddress` returns for a missing name.
+fn failed(ptr: *const c_void) -> bool {
+    ptr.is_null() || (ptr as isize).unsigned_abs() <= 3
 }
 
 fn edge(value: u32) -> i32 {
@@ -628,7 +633,7 @@ mod platform {
 
 #[cfg(target_os = "linux")]
 mod platform {
-    use std::ffi::{c_void, CString};
+    use std::ffi::{c_char, c_void, CString};
 
     use libloading::Library;
 
@@ -651,7 +656,7 @@ mod platform {
         unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *const EglInt) -> *mut c_void;
     type MakeCurrent =
         unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> u32;
-    type GetProc = unsafe extern "C" fn(*const i8) -> *const c_void;
+    type GetProc = unsafe extern "C" fn(*const c_char) -> *const c_void;
     type DestroySurface = unsafe extern "C" fn(*mut c_void, *mut c_void) -> u32;
     type DestroyContext = unsafe extern "C" fn(*mut c_void, *mut c_void) -> u32;
     type Terminate = unsafe extern "C" fn(*mut c_void) -> u32;
@@ -919,10 +924,6 @@ mod platform {
 pub(crate) struct Platform {
     #[cfg(any(windows, target_os = "linux"))]
     surface: platform::Surface,
-}
-
-fn failed(ptr: *const c_void) -> bool {
-    ptr.is_null() || (ptr as isize).unsigned_abs() <= 3
 }
 
 #[cfg(all(test, windows))]

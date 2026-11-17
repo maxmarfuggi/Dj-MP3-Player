@@ -2,8 +2,9 @@
 //!
 //! The live audio copy only holds a fraction of a second, so the deck reads
 //! the file once in the background and keeps a min and a max for every
-//! eightieth of a second. The overview and the scrolling window both sample
-//! that series.
+//! eightieth of a second. Peaks are handed over as the file is read, so the
+//! waveform can draw before the end. The overview and the scrolling window
+//! both sample that series.
 
 use std::path::Path;
 
@@ -12,6 +13,18 @@ use crate::playback::decode::Source;
 /// Peaks kept per second of audio. A four-second window then has a few
 /// hundred columns, which is enough to look continuous.
 pub const PEAKS_PER_SECOND: u32 = 80;
+
+/// Bins between hand-overs after the first. Forty bins is half a second.
+const HANDOVER_BINS: usize = 40;
+
+/// How far [`scan_file`] got.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Pass {
+    /// The file was read to the end.
+    Finished,
+    /// `publish` asked the scan to stop.
+    Stopped,
+}
 
 /// Min and max of successive slices of the file, mixed to one channel.
 pub struct Peaks {
@@ -40,16 +53,54 @@ pub fn peaks_from_mono(samples: &[f32], rate: u32) -> Peaks {
     bins.finish()
 }
 
-/// Reads `path` and returns its peaks. The caller runs this off the UI thread.
-pub fn scan_file(path: &Path) -> Result<Peaks, String> {
+/// Reads `path`, calling `publish` with the peaks so far.
+///
+/// The first hand-over is the first bin, then about twice a second of audio,
+/// then whatever is left at the end. `publish` returns false to stop. The
+/// caller runs this off the UI thread.
+pub fn scan_file(path: &Path, mut publish: impl FnMut(Peaks) -> bool) -> Result<Pass, String> {
     let mut source = Source::open(path)?;
     let mut bins = Accumulator::new(source.sample_rate());
     let mut frames = Vec::new();
+    let mut published = 0;
     while source.read(&mut frames)?.is_some() {
         bins.push_stereo(&frames);
         frames.clear();
+        if !hand_over(&bins, &mut published, &mut publish) {
+            return Ok(Pass::Stopped);
+        }
     }
-    Ok(bins.finish())
+    let peaks = bins.finish();
+    if (peaks.mins.len() != published || published == 0) && !publish(peaks) {
+        return Ok(Pass::Stopped);
+    }
+    Ok(Pass::Finished)
+}
+
+/// Publishes complete bins until `published` is caught up. The open bin stays
+/// out, so a later hand-over extends the earlier one.
+fn hand_over(
+    bins: &Accumulator,
+    published: &mut usize,
+    publish: &mut impl FnMut(Peaks) -> bool,
+) -> bool {
+    loop {
+        let ready = bins.mins.len();
+        if ready <= *published {
+            return true;
+        }
+        let take = if *published == 0 {
+            1
+        } else if ready - *published >= HANDOVER_BINS {
+            *published + HANDOVER_BINS
+        } else {
+            return true;
+        };
+        *published = take;
+        if !publish(bins.prefix(take)) {
+            return false;
+        }
+    }
 }
 
 /// Min and max for each column of the waveform between `from` and `to`.
@@ -133,6 +184,16 @@ impl Accumulator {
         }
     }
 
+    /// The first `bins` complete bins. The open bin is not included.
+    fn prefix(&self, bins: usize) -> Peaks {
+        let bins = bins.min(self.mins.len());
+        Peaks {
+            mins: self.mins[..bins].to_vec(),
+            maxs: self.maxs[..bins].to_vec(),
+            seconds: (bins * self.frames_per_bin) as f64 / f64::from(self.rate),
+        }
+    }
+
     fn flush(&mut self) {
         if self.in_bin == 0 {
             return;
@@ -156,7 +217,7 @@ impl Accumulator {
 
 #[cfg(test)]
 mod tests {
-    use super::{columns, peaks_from_mono, Peaks};
+    use super::{columns, peaks_from_mono, scan_file, Pass, Peaks};
 
     #[test]
     fn samples_fold_into_eightieths_of_a_second() {
@@ -171,6 +232,65 @@ mod tests {
         let peaks = peaks_from_mono(&[0.5, -0.25, 0.1], 160);
         assert_eq!(peaks.maxs, vec![0.5, 0.1]);
         assert_eq!(peaks.mins.len(), 2);
+    }
+
+    #[test]
+    fn a_scan_reports_peaks_before_the_file_ends() {
+        let path = tone("early.wav", 16_000, 32_000);
+        let mut seen = Vec::new();
+        scan_file(&path, |peaks| {
+            seen.push(peaks);
+            true
+        })
+        .unwrap();
+        assert!(seen.len() >= 2, "the scan reported only once");
+        let first = &seen[0];
+        let last = seen.last().unwrap();
+        assert!(first.seconds < last.seconds);
+        assert_eq!(&last.mins[..first.mins.len()], first.mins.as_slice());
+        assert_eq!(&last.maxs[..first.maxs.len()], first.maxs.as_slice());
+    }
+
+    #[test]
+    fn a_scan_stops_when_asked() {
+        let path = tone("stop.wav", 16_000, 32_000);
+        let full = scan_file(&path, |_| true).unwrap();
+        let mut reports = 0;
+        let stopped = scan_file(&path, |_| {
+            reports += 1;
+            false
+        })
+        .unwrap();
+        assert_eq!(reports, 1);
+        assert_eq!(stopped, Pass::Stopped);
+        assert_eq!(full, Pass::Finished);
+    }
+
+    /// A mono 16-bit tone long enough to cross several hand-overs.
+    fn tone(name: &str, rate: u32, frames: u32) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("djusb-peaks-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        let data_len = frames * 2;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&rate.to_le_bytes());
+        bytes.extend_from_slice(&(rate * 2).to_le_bytes());
+        bytes.extend_from_slice(&2_u16.to_le_bytes());
+        bytes.extend_from_slice(&16_u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_len.to_le_bytes());
+        for frame in 0..frames {
+            let sample: i16 = if frame % 2 == 0 { 16_000 } else { -16_000 };
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        std::fs::write(&path, bytes).unwrap();
+        path
     }
 
     #[test]

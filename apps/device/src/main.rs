@@ -328,6 +328,9 @@ impl App {
             key: playing.keys.get(index).cloned().unwrap_or_default(),
             bpm: playing.bpms.get(index).copied().flatten(),
             path: playing.paths.get(index).cloned(),
+            next: index
+                .checked_add(1)
+                .and_then(|next| playing.paths.get(next).cloned()),
             number: Some(index + 1),
         }
     }

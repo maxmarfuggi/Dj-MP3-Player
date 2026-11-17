@@ -1,7 +1,8 @@
 //! A CDJ performance screen, laid out like a Pioneer CDJ-2000NXS.
 //!
 //! The title, key, track number, remaining time, and tempo come from the
-//! library and the playhead. The waveform is scanned from the file. Beat
+//! library and the playhead. The waveform is scanned from the file, and the
+//! next file is scanned once this one is in hand. Beat
 //! marks, the beat and bar counter, and the bar count are counted from the
 //! start of the file at the file's BPM. The MEMORY and CUE tags and the zoom
 //! panel are only the CDJ's furniture: the library has no cue points and the
@@ -9,8 +10,8 @@
 //! pitch the track.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::thread;
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::thread::{self, JoinHandle};
 
 use iced::alignment;
 use iced::widget::canvas::{self, Fill, LineCap, LineJoin, Path, Stroke, Style};
@@ -20,7 +21,7 @@ use iced::{window, Color, Element, Fill as FillLength, Pixels, Point, Size};
 use super::deck_math::{
     bars_text, beats, bpm_digits, counter, detail_span, remain_digits, window_start,
 };
-use super::peaks::{columns, scan_file, Peaks};
+use super::peaks::{columns, scan_file, Pass, Peaks};
 use crate::chrome::FACE;
 use crate::playback::{Moment, Playhead};
 
@@ -71,6 +72,8 @@ pub struct DeckTrack {
     pub key: String,
     pub bpm: Option<f64>,
     pub path: Option<PathBuf>,
+    /// The file after this one. It is read while this one is showing.
+    pub next: Option<PathBuf>,
     /// Position in the queue, counting from 1.
     pub number: Option<usize>,
 }
@@ -84,6 +87,7 @@ impl DeckTrack {
             key: String::new(),
             bpm: None,
             path: None,
+            next: None,
             number: None,
         }
     }
@@ -123,7 +127,7 @@ impl<Message> canvas::Program<Message> for Deck {
             return None;
         };
         if let Some(path) = &self.track.path {
-            state.store.request(path);
+            state.store.request(path, self.track.next.as_deref());
             state.shown = state.store.get(path);
             state.failed = state.store.failed(path);
         } else {
@@ -153,75 +157,219 @@ impl<Message> canvas::Program<Message> for Deck {
     }
 }
 
-/// Peaks for the current file. A second request for the same path does not
-/// start another scan.
-#[derive(Clone)]
+/// Peaks for the file on screen, and for the file after it.
+///
+/// The current file is read first and published as it goes. The next file
+/// starts when that read finishes, so a track change already has its waveform.
 struct PeakStore {
-    slot: Arc<Mutex<Slot>>,
+    shared: Arc<Gate>,
+    thread: Option<JoinHandle<()>>,
 }
 
-struct Slot {
-    path: Option<PathBuf>,
+struct Gate {
+    state: Mutex<Shelf>,
+    wake: Condvar,
+}
+
+struct Shelf {
+    current: Option<PathBuf>,
+    next: Option<PathBuf>,
+    entries: Vec<Entry>,
+    stop: bool,
+}
+
+struct Entry {
+    path: PathBuf,
     peaks: Option<Arc<Peaks>>,
+    done: bool,
     failed: bool,
 }
 
 impl Default for PeakStore {
     fn default() -> Self {
-        Self {
-            slot: Arc::new(Mutex::new(Slot {
-                path: None,
-                peaks: None,
-                failed: false,
-            })),
+        let shared = Arc::new(Gate {
+            state: Mutex::new(Shelf {
+                current: None,
+                next: None,
+                entries: Vec::new(),
+                stop: false,
+            }),
+            wake: Condvar::new(),
+        });
+        let thread = {
+            let shared = Arc::clone(&shared);
+            thread::Builder::new()
+                .name("deck-waveform".to_string())
+                .spawn(move || worker(shared))
+                .map_err(|error| {
+                    eprintln!("The deck waveform could not be read: {error}");
+                })
+                .ok()
+        };
+        Self { shared, thread }
+    }
+}
+
+impl Drop for PeakStore {
+    fn drop(&mut self) {
+        {
+            let mut shelf = lock(&self.shared.state);
+            shelf.stop = true;
+            shelf.current = None;
+            shelf.next = None;
+        }
+        self.shared.wake.notify_one();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
         }
     }
 }
 
 impl PeakStore {
-    fn request(&self, path: &std::path::Path) {
+    fn request(&self, current: &std::path::Path, next: Option<&std::path::Path>) {
         {
-            let mut slot = lock(&self.slot);
-            if slot.path.as_deref() == Some(path) {
+            let mut shelf = lock(&self.shared.state);
+            if shelf.current.as_deref() == Some(current) && shelf.next.as_deref() == next {
                 return;
             }
-            slot.path = Some(path.to_path_buf());
-            slot.peaks = None;
-            slot.failed = false;
-        }
-        let slot = Arc::clone(&self.slot);
-        let path = path.to_path_buf();
-        let _ = thread::Builder::new()
-            .name("deck-waveform".to_string())
-            .spawn(move || {
-                let scanned = scan_file(&path);
-                let mut slot = lock(&slot);
-                if slot.path.as_deref() != Some(path.as_path()) {
-                    return;
-                }
-                match scanned {
-                    Ok(peaks) => slot.peaks = Some(Arc::new(peaks)),
-                    Err(error) => {
-                        eprintln!("The deck waveform could not be read: {error}");
-                        slot.failed = true;
-                    }
-                }
+            shelf.current = Some(current.to_path_buf());
+            shelf.next = next.map(std::path::Path::to_path_buf);
+            let keep_current = shelf.current.clone();
+            let keep_next = shelf.next.clone();
+            shelf.entries.retain(|entry| {
+                Some(&entry.path) == keep_current.as_ref()
+                    || Some(&entry.path) == keep_next.as_ref()
             });
+        }
+        self.shared.wake.notify_one();
     }
 
     fn get(&self, path: &std::path::Path) -> Option<Arc<Peaks>> {
-        let slot = lock(&self.slot);
-        if slot.path.as_deref() == Some(path) {
-            slot.peaks.clone()
-        } else {
-            None
-        }
+        let shelf = lock(&self.shared.state);
+        shelf
+            .entries
+            .iter()
+            .find(|entry| entry.path == path)
+            .and_then(|entry| entry.peaks.clone())
     }
 
     fn failed(&self, path: &std::path::Path) -> bool {
-        let slot = lock(&self.slot);
-        slot.path.as_deref() == Some(path) && slot.failed
+        let shelf = lock(&self.shared.state);
+        shelf
+            .entries
+            .iter()
+            .any(|entry| entry.path == path && entry.failed)
     }
+}
+
+fn worker(shared: Arc<Gate>) {
+    loop {
+        let path = {
+            let mut shelf = lock(&shared.state);
+            loop {
+                if shelf.stop {
+                    return;
+                }
+                if let Some(path) = next_file(&shelf) {
+                    break path;
+                }
+                shelf = shared
+                    .wake
+                    .wait(shelf)
+                    .unwrap_or_else(|error| error.into_inner());
+            }
+        };
+        read_file(&shared, path);
+    }
+}
+
+/// The file on screen, or the one after it once the screen's file is done.
+fn next_file(shelf: &Shelf) -> Option<PathBuf> {
+    if let Some(path) = shelf.current.clone() {
+        if !settled(shelf, &path) {
+            return Some(path);
+        }
+    }
+    if let Some(path) = shelf.next.clone() {
+        if !settled(shelf, &path) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn settled(shelf: &Shelf, path: &std::path::Path) -> bool {
+    shelf
+        .entries
+        .iter()
+        .any(|entry| entry.path == path && (entry.done || entry.failed))
+}
+
+fn read_file(shared: &Gate, path: PathBuf) {
+    let scanned = scan_file(&path, |peaks| {
+        let mut shelf = lock(&shared.state);
+        if !wanted(&shelf, &path) {
+            return false;
+        }
+        store_peaks(&mut shelf, &path, peaks);
+        true
+    });
+    let mut shelf = lock(&shared.state);
+    if !wanted(&shelf, &path) {
+        return;
+    }
+    match scanned {
+        Ok(Pass::Finished) => finish(&mut shelf, &path),
+        Ok(Pass::Stopped) => {}
+        Err(error) => {
+            eprintln!("The deck waveform could not be read: {error}");
+            fail(&mut shelf, &path);
+        }
+    }
+}
+
+fn wanted(shelf: &Shelf, path: &std::path::Path) -> bool {
+    shelf.current.as_deref() == Some(path) || shelf.next.as_deref() == Some(path)
+}
+
+fn store_peaks(shelf: &mut Shelf, path: &std::path::Path, peaks: Peaks) {
+    if let Some(entry) = shelf.entries.iter_mut().find(|entry| entry.path == path) {
+        entry.peaks = Some(Arc::new(peaks));
+        return;
+    }
+    shelf.entries.push(Entry {
+        path: path.to_path_buf(),
+        peaks: Some(Arc::new(peaks)),
+        done: false,
+        failed: false,
+    });
+}
+
+fn finish(shelf: &mut Shelf, path: &std::path::Path) {
+    if let Some(entry) = shelf.entries.iter_mut().find(|entry| entry.path == path) {
+        entry.done = true;
+        return;
+    }
+    shelf.entries.push(Entry {
+        path: path.to_path_buf(),
+        peaks: None,
+        done: true,
+        failed: false,
+    });
+}
+
+fn fail(shelf: &mut Shelf, path: &std::path::Path) {
+    if let Some(entry) = shelf.entries.iter_mut().find(|entry| entry.path == path) {
+        entry.failed = entry.peaks.is_none();
+        entry.done = true;
+        return;
+    }
+    shelf.entries.push(Entry {
+        path: path.to_path_buf(),
+        peaks: None,
+        done: true,
+        failed: true,
+    });
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -969,4 +1117,68 @@ fn fit(text: &str, size: f32, width: f32) -> String {
     let mut out: String = text.chars().take(keep).collect();
     out.push('…');
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, Instant};
+
+    use super::PeakStore;
+
+    #[test]
+    fn the_next_track_is_ready_when_it_starts() {
+        let current = tone("deck-current.wav", 8_000, 8_000);
+        let next = tone("deck-next.wav", 8_000, 8_000);
+        let store = PeakStore::default();
+        store.request(&current, Some(next.as_path()));
+        wait_for(&store, &next, 0.99);
+        let started = Instant::now();
+        store.request(next.as_path(), None);
+        let ready = store
+            .get(next.as_path())
+            .expect("the coming track was scanned again");
+        assert!(started.elapsed() < Duration::from_millis(50));
+        assert!(ready.seconds >= 0.99);
+    }
+
+    fn wait_for(store: &PeakStore, path: &Path, seconds: f64) {
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(5) {
+            if store
+                .get(path)
+                .is_some_and(|peaks| peaks.seconds >= seconds)
+            {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("the waveform was not ready");
+    }
+
+    fn tone(name: &str, rate: u32, frames: u32) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("djusb-peaks-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        let data_len = frames * 2;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&rate.to_le_bytes());
+        bytes.extend_from_slice(&(rate * 2).to_le_bytes());
+        bytes.extend_from_slice(&2_u16.to_le_bytes());
+        bytes.extend_from_slice(&16_u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_len.to_le_bytes());
+        for frame in 0..frames {
+            let sample: i16 = if frame % 2 == 0 { 16_000 } else { -16_000 };
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
 }
