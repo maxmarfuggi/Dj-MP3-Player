@@ -275,7 +275,7 @@ impl App {
                 None => None,
             };
             let order = playlist_id.and_then(|id| self.settings.order(&order_key(library_id, id)));
-            list_entries(Some(library), playlist, order, None)
+            list_entries(Some(library), playlist, order, self.browser.track_sort())
         };
         let Some(cue) = cue_from_entries(
             &entries,

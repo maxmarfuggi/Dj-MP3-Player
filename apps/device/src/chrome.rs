@@ -68,9 +68,13 @@ pub fn screen<Message: 'static>(
     if matches!(frame.mast, Mast::NowPlaying) {
         rows.push(now_block(header, glow));
     }
+    let sort_selected = shown
+        .iter()
+        .any(|row| matches!(row, Row::Sort { selected: true }));
     let Frame {
         pinned,
         caption,
+        sort,
         items,
         mast,
         fullscreen: _,
@@ -78,7 +82,14 @@ pub fn screen<Message: 'static>(
     for entry in shown {
         match entry {
             Row::Pinned { selected } => {
-                rows.push(page_head(pinned.clone(), caption.clone(), selected, glow));
+                let sort = sort.clone().map(|label| (label, sort_selected));
+                rows.push(page_head(
+                    pinned.clone(),
+                    caption.clone(),
+                    sort,
+                    selected,
+                    glow,
+                ));
                 match &mast {
                     Mast::Level(readout) => rows.push(level_block(readout.clone(), glow)),
                     Mast::Notice(lines) => rows.push(notice_block(lines.clone(), glow)),
@@ -90,6 +101,7 @@ pub fn screen<Message: 'static>(
                     | Mast::None => {}
                 }
             }
+            Row::Sort { .. } => {}
             Row::Item { index, selected } => {
                 if let Some(line) = items.get(index) {
                     rows.push(menu_row(line.clone(), selected, false, glow));
@@ -144,16 +156,18 @@ fn rule<Message: 'static>(glow: Glow) -> Element<'static, Message> {
 
 /// The pinned row and the page name, closed by a lit rule.
 ///
-/// Everything under the rule is a choice on that page.
+/// Everything under the rule is a choice on that page. On a track list, Sort
+/// sits on the same line as the page name.
 fn page_head<Message: 'static>(
     pinned: Line,
     caption: Option<String>,
+    sort: Option<(String, bool)>,
     selected: bool,
     glow: Glow,
 ) -> Element<'static, Message> {
     let mut parts = vec![menu_row(pinned, selected, true, glow)];
-    if let Some(caption) = caption {
-        parts.push(caption_line(caption, glow));
+    if caption.is_some() || sort.is_some() {
+        parts.push(caption_line(caption.unwrap_or_default(), sort, glow));
     }
     parts.push(rule(glow));
     column(parts).spacing(space::XS).width(Fill).into()
@@ -454,21 +468,70 @@ fn stroke(ink: Color, width: f32) -> Stroke<'static> {
     }
 }
 
-fn caption_line<Message: 'static>(caption: String, glow: Glow) -> Element<'static, Message> {
+fn caption_line<Message: 'static>(
+    caption: String,
+    sort: Option<(String, bool)>,
+    glow: Glow,
+) -> Element<'static, Message> {
+    let mut parts = vec![text(caption)
+        .font(FACE)
+        .size(font::size::WALL_DETAIL)
+        .color(glow.dim)
+        .wrapping(Wrapping::None)
+        .width(Fill)
+        .into()];
+    let has_sort = sort.is_some();
+    if let Some((label, selected)) = sort {
+        parts.push(sort_chip(label, selected, glow));
+    }
     container(
-        text(caption)
-            .font(FACE)
-            .size(font::size::WALL_DETAIL)
-            .color(glow.dim)
-            .wrapping(Wrapping::None),
+        row(parts)
+            .align_y(Alignment::Center)
+            .spacing(space::SM)
+            .width(Fill),
     )
     .padding(Padding {
         top: 0.0,
         bottom: space::XS,
         left: space::LG,
-        right: space::LG,
+        right: if has_sort { 0.0 } else { space::LG },
     })
     .width(Fill)
+    .clip(true)
+    .into()
+}
+
+/// Sort, on the title line. Pressing the highlighted chip advances the order.
+fn sort_chip<Message: 'static>(
+    label: String,
+    selected: bool,
+    glow: Glow,
+) -> Element<'static, Message> {
+    let ink = if selected {
+        BACKGROUND
+    } else {
+        glow.foreground
+    };
+    container(
+        text(label)
+            .font(FACE)
+            .size(font::size::WALL)
+            .color(ink)
+            .wrapping(Wrapping::None),
+    )
+    .padding(Padding {
+        top: space::ROW,
+        bottom: space::ROW,
+        left: space::LG,
+        right: space::LG,
+    })
+    .style(move |_| {
+        if selected {
+            container::Style::default().background(glow.foreground)
+        } else {
+            container::Style::default()
+        }
+    })
     .into()
 }
 

@@ -14,10 +14,16 @@
 //! and the next turn of the platter brings it back. Theme cycles the
 //! waveform through white, red, blue, and Pulse, and the equalizer through Mirror,
 //! LED, and Fire.
+//!
+//! A track list, including All tracks, puts Sort on the title line. Pressing
+//! it steps through the list's own order, BPM ascending, and BPM descending.
 
 use std::path::PathBuf;
 
-use djusb_core::logic::{find_playlist, format_bpm, format_time, list_entries, order_key};
+use djusb_core::logic::{
+    find_playlist, format_bpm, format_time, list_entries, next_sort, order_key, SortColumn,
+    SortDirection, SortState,
+};
 use djusb_core::{
     settings_path, Library, LibraryState, PlaylistKind, PlaylistNode, Settings, Track,
 };
@@ -48,6 +54,8 @@ pub struct Browser {
     theme: EqualizerTheme,
     /// Oscilloscope colour. White, red, blue, or the colour pulse.
     wave_theme: WaveformTheme,
+    /// BPM order for track lists. None keeps each list's own order.
+    track_sort: Option<SortState>,
 }
 
 /// What the screen needs from the player and the libraries.
@@ -88,6 +96,8 @@ impl PlaySnap {
 pub struct Frame {
     pub pinned: Line,
     pub caption: Option<String>,
+    /// The sort control on the title line. Track lists only.
+    pub sort: Option<String>,
     pub items: Vec<Line>,
     pub mast: Mast,
     /// The picture fills the screen and the menu is hidden.
@@ -310,7 +320,7 @@ impl Browser {
         let limit = to_percent(limit);
         let lines = home_lines(state);
         let mut highlight = Highlight::pinned();
-        highlight.move_skipping(1, lines.len(), VISIBLE_ROWS, false, |index| {
+        highlight.move_skipping(1, lines.len(), VISIBLE_ROWS, false, false, |index| {
             !matches!(
                 lines.get(index.wrapping_sub(1)),
                 Some(HomeLine::Export {
@@ -328,7 +338,14 @@ impl Browser {
             fullscreen: false,
             theme: EqualizerTheme::Mirror,
             wave_theme: WaveformTheme::White,
+            track_sort: None,
         }
+    }
+
+    /// The order a track list is showing. Playback uses the same order.
+    #[must_use]
+    pub fn track_sort(&self) -> Option<SortState> {
+        self.track_sort
     }
 
     /// The level the player should use, from 0 to 1.
@@ -350,6 +367,9 @@ impl Browser {
         Frame {
             pinned: self.pinned_line(ctx),
             caption: self.caption(ctx),
+            sort: self
+                .shows_sort()
+                .then(|| sort_label(self.track_sort).to_string()),
             items: choices.into_iter().map(|choice| choice.line).collect(),
             mast: self.mast(ctx),
             fullscreen: self.fullscreen && self.showing_visual(),
@@ -358,7 +378,8 @@ impl Browser {
 
     #[must_use]
     pub fn shown(&self, ctx: &Ctx<'_>) -> Vec<Row> {
-        self.highlight.rows(self.choices(ctx).len(), VISIBLE_ROWS)
+        self.highlight
+            .rows(self.choices(ctx).len(), VISIBLE_ROWS, self.shows_sort())
     }
 
     /// Keeps the highlight and the screen inside the libraries still mounted.
@@ -368,9 +389,10 @@ impl Browser {
         if self.place == before {
             let choices = self.choices(ctx);
             let footer = self.footer(ctx);
+            let sort = self.shows_sort();
             self.highlight
-                .fit_live(choices.len(), VISIBLE_ROWS, footer, |index| {
-                    row_is_inert(&choices, index)
+                .fit_live(choices.len(), VISIBLE_ROWS, footer, sort, |index| {
+                    row_is_inert(&choices, index, sort)
                 });
         } else {
             self.fullscreen = false;
@@ -392,23 +414,27 @@ impl Browser {
             Control::Turn(steps) if self.on_level() => self.nudge(steps),
             Control::Turn(steps) if matches!(self.place, Place::Color) => {
                 let choices = self.choices(ctx);
+                let sort = self.shows_sort();
                 self.highlight.move_skipping(
                     steps,
                     choices.len(),
                     VISIBLE_ROWS,
                     self.footer(ctx),
-                    |index| row_is_inert(&choices, index),
+                    sort,
+                    |index| row_is_inert(&choices, index, sort),
                 );
                 self.preview_color(ctx)
             }
             Control::Turn(steps) => {
                 let choices = self.choices(ctx);
+                let sort = self.shows_sort();
                 self.highlight.move_skipping(
                     steps,
                     choices.len(),
                     VISIBLE_ROWS,
                     self.footer(ctx),
-                    |index| row_is_inert(&choices, index),
+                    sort,
+                    |index| row_is_inert(&choices, index, sort),
                 );
                 Effect::None
             }
@@ -437,6 +463,11 @@ impl Browser {
         matches!(self.place, Place::Volume | Place::VolumeLimit)
     }
 
+    /// Track lists, including All tracks, offer Sort on the title line.
+    fn shows_sort(&self) -> bool {
+        matches!(self.place, Place::Tracks { .. })
+    }
+
     /// The playing line can take the highlight. Now playing and MilkDrop
     /// already fill the screen, and a level screen uses the platter for the
     /// value.
@@ -449,7 +480,10 @@ impl Browser {
     /// The highlight is on the playing line.
     #[must_use]
     pub fn footer_selected(&self, ctx: &Ctx<'_>) -> bool {
-        self.footer(ctx) && self.highlight.on_footer(self.choices(ctx).len())
+        self.footer(ctx)
+            && self
+                .highlight
+                .on_footer(self.choices(ctx).len(), self.shows_sort())
     }
 
     fn go(&mut self, place: Place, ctx: &Ctx<'_>) {
@@ -473,28 +507,43 @@ impl Browser {
             return;
         }
         let choices = self.choices(ctx);
+        let sort = self.shows_sort();
         self.highlight = Highlight::pinned();
+        // Land on the first track. Sort is one detent up from that, on the title line.
+        let steps = 1 + i32::from(sort);
         self.highlight
-            .move_skipping(1, choices.len(), VISIBLE_ROWS, false, |index| {
-                row_is_inert(&choices, index)
+            .move_skipping(steps, choices.len(), VISIBLE_ROWS, false, sort, |index| {
+                row_is_inert(&choices, index, sort)
             });
         if matches!(self.place, Place::Color) {
             let selected = crate::illumination::index(ctx.settings.display_color());
             let steps = i32::try_from(selected).unwrap_or(0);
-            self.highlight
-                .move_skipping(steps, choices.len(), VISIBLE_ROWS, false, |index| {
-                    row_is_inert(&choices, index)
-                });
+            self.highlight.move_skipping(
+                steps,
+                choices.len(),
+                VISIBLE_ROWS,
+                false,
+                sort,
+                |index| row_is_inert(&choices, index, sort),
+            );
         }
     }
 
     /// The colour under the highlight, when the platter is on the colour list.
     fn preview_color(&self, ctx: &Ctx<'_>) -> Effect {
         let index = self.highlight.index();
-        if index == 0 || self.highlight.on_footer(self.choices(ctx).len()) {
+        let sort = self.shows_sort();
+        if index == 0
+            || (sort && index == 1)
+            || self.highlight.on_footer(self.choices(ctx).len(), sort)
+        {
             return Effect::None;
         }
-        match self.choices(ctx).get(index - 1).map(|choice| &choice.act) {
+        match self
+            .choices(ctx)
+            .get(index - 1 - usize::from(sort))
+            .map(|choice| &choice.act)
+        {
             Some(Act::Color(id)) => Effect::DisplayColor(id),
             _ => Effect::None,
         }
@@ -530,11 +579,16 @@ impl Browser {
 
     fn press(&mut self, ctx: &Ctx<'_>) -> Effect {
         let index = self.highlight.index();
+        let sort = self.shows_sort();
         if index == 0 {
             self.press_pinned(ctx);
             return Effect::None;
         }
-        if self.highlight.on_footer(self.choices(ctx).len()) {
+        if sort && index == 1 {
+            self.track_sort = next_sort(self.track_sort, SortColumn::Bpm);
+            return Effect::None;
+        }
+        if self.highlight.on_footer(self.choices(ctx).len(), sort) {
             if self.footer(ctx) {
                 self.go(Place::NowPlaying, ctx);
             }
@@ -542,7 +596,7 @@ impl Browser {
         }
         let act = self
             .choices(ctx)
-            .get(index - 1)
+            .get(index - 1 - usize::from(sort))
             .map(|choice| choice.act.clone());
         match act {
             Some(act) => self.act(act, ctx),
@@ -782,7 +836,7 @@ impl Browser {
                 library_id,
                 playlist_id,
                 ..
-            } => track_choices(ctx, library_id, playlist_id.as_deref()),
+            } => track_choices(ctx, library_id, playlist_id.as_deref(), self.track_sort),
             Place::NowPlaying => self.transport_choices(ctx),
             Place::Visualizers => visualizer_choices(),
             Place::Visualizer(Vis::MilkDrop) => milk_choices(ctx.packs),
@@ -925,12 +979,32 @@ impl Browser {
     }
 }
 
-/// A list row the platter must not land on. The pinned row and the playing
-/// line are never inert: both do something when pressed.
-fn row_is_inert(choices: &[Choice], index: usize) -> bool {
+/// A list row the platter must not land on. The pinned row, Sort, and the
+/// playing line are never inert: each does something when pressed.
+///
+/// `sort` shifts item indexes by one, because Sort occupies highlight index 1.
+fn row_is_inert(choices: &[Choice], index: usize, sort: bool) -> bool {
+    if sort && index == 1 {
+        return false;
+    }
     choices
-        .get(index.wrapping_sub(1))
+        .get(index.wrapping_sub(1 + usize::from(sort)))
         .is_some_and(|choice| matches!(choice.act, Act::Nothing))
+}
+
+/// The words on the sort control. Pressing it advances to the next.
+fn sort_label(sort: Option<SortState>) -> &'static str {
+    match sort {
+        Some(SortState {
+            column: SortColumn::Bpm,
+            direction: SortDirection::Asc,
+        }) => "BPM asc",
+        Some(SortState {
+            column: SortColumn::Bpm,
+            direction: SortDirection::Desc,
+        }) => "BPM desc",
+        _ => "Order",
+    }
 }
 
 fn home_choices(ctx: &Ctx<'_>) -> Vec<Choice> {
@@ -1056,8 +1130,13 @@ fn kind_mark(kind: PlaylistKind) -> Mark {
     }
 }
 
-fn track_choices(ctx: &Ctx<'_>, library_id: &str, playlist_id: Option<&str>) -> Vec<Choice> {
-    let Some(entries) = track_entries(ctx, library_id, playlist_id) else {
+fn track_choices(
+    ctx: &Ctx<'_>,
+    library_id: &str,
+    playlist_id: Option<&str>,
+    sort: Option<SortState>,
+) -> Vec<Choice> {
+    let Some(entries) = track_entries(ctx, library_id, playlist_id, sort) else {
         return Vec::new();
     };
     if entries.is_empty() {
@@ -1080,6 +1159,7 @@ fn track_entries(
     ctx: &Ctx<'_>,
     library_id: &str,
     playlist_id: Option<&str>,
+    sort: Option<SortState>,
 ) -> Option<Vec<djusb_core::logic::TrackEntry>> {
     let library = find_library(ctx, library_id)?;
     let playlist = match playlist_id {
@@ -1087,7 +1167,7 @@ fn track_entries(
         None => None,
     };
     let order = playlist_id.and_then(|id| ctx.settings.order(&order_key(library_id, id)));
-    Some(list_entries(Some(library), playlist, order, None))
+    Some(list_entries(Some(library), playlist, order, sort))
 }
 
 fn track_detail(track: &Track) -> Option<String> {
@@ -1457,7 +1537,7 @@ mod tests {
             .iter()
             .position(|item| item.text == label)
             .unwrap_or_else(|| panic!("no row {label}"));
-        let target = index + 1;
+        let target = index + 1 + usize::from(frame.sort.is_some());
         for _ in 0..64 {
             if browser.cursor() == target {
                 break;
@@ -1660,6 +1740,114 @@ mod tests {
     }
 
     #[test]
+    fn sort_on_the_title_line_cycles_bpm_and_the_original_order() {
+        let mut slow = track("slow", "Slow");
+        slow.bpm = Some(100.0);
+        let mut mid = track("mid", "Mid");
+        mid.bpm = Some(120.0);
+        let mut fast = track("fast", "Fast");
+        fast.bpm = Some(140.0);
+        let library = Library {
+            id: "rekordbox-1".to_string(),
+            source: LibrarySource::Rekordbox,
+            volume_name: "GIGS".to_string(),
+            volume_path: "D:\\".to_string(),
+            tracks: vec![slow, mid, fast],
+            playlists: vec![node(
+                "mix",
+                "Mix",
+                PlaylistKind::Playlist,
+                vec![],
+                &["mid", "fast", "slow"],
+            )],
+        };
+        let libraries = state(vec![library]);
+        let settings = Settings::new();
+        let ctx = context(&libraries, &settings, PlaySnap::idle());
+        let mut browser = Browser::new(1.0, &libraries);
+        press_text(&mut browser, &ctx, "Device Library");
+        assert!(browser.frame(&ctx).sort.is_none());
+        assert!(!browser
+            .shown(&ctx)
+            .iter()
+            .any(|row| matches!(row, crate::input::Row::Sort { .. })));
+
+        press_text(&mut browser, &ctx, "Mix");
+        assert_eq!(browser.frame(&ctx).caption.as_deref(), Some("Mix"));
+        assert_eq!(browser.frame(&ctx).sort.as_deref(), Some("Order"));
+        assert_eq!(
+            titles(&browser, &ctx),
+            ["Artist – Mid", "Artist – Fast", "Artist – Slow"]
+        );
+
+        press_sort(&mut browser, &ctx);
+        assert_eq!(browser.frame(&ctx).sort.as_deref(), Some("BPM asc"));
+        assert_eq!(
+            titles(&browser, &ctx),
+            ["Artist – Slow", "Artist – Mid", "Artist – Fast"]
+        );
+        let effect = press_text(&mut browser, &ctx, "Artist – Slow");
+        assert!(matches!(
+            effect,
+            Effect::Play {
+                index: 0,
+                playlist_id: Some(_),
+                ..
+            }
+        ));
+
+        press_sort(&mut browser, &ctx);
+        assert_eq!(browser.frame(&ctx).sort.as_deref(), Some("BPM desc"));
+        assert_eq!(
+            titles(&browser, &ctx),
+            ["Artist – Fast", "Artist – Mid", "Artist – Slow"]
+        );
+
+        press_sort(&mut browser, &ctx);
+        assert_eq!(browser.frame(&ctx).sort.as_deref(), Some("Order"));
+        assert_eq!(
+            titles(&browser, &ctx),
+            ["Artist – Mid", "Artist – Fast", "Artist – Slow"]
+        );
+
+        press_pinned(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "All tracks");
+        assert_eq!(browser.frame(&ctx).caption.as_deref(), Some("All tracks"));
+        assert_eq!(browser.frame(&ctx).sort.as_deref(), Some("Order"));
+        assert_eq!(
+            titles(&browser, &ctx),
+            ["Artist – Fast", "Artist – Mid", "Artist – Slow"]
+        );
+        press_sort(&mut browser, &ctx);
+        assert_eq!(browser.frame(&ctx).sort.as_deref(), Some("BPM asc"));
+        assert_eq!(
+            titles(&browser, &ctx),
+            ["Artist – Slow", "Artist – Mid", "Artist – Fast"]
+        );
+    }
+
+    fn titles(browser: &Browser, ctx: &Ctx<'_>) -> Vec<String> {
+        browser
+            .frame(ctx)
+            .items
+            .into_iter()
+            .map(|line| line.text)
+            .collect()
+    }
+
+    fn press_sort(browser: &mut Browser, ctx: &Ctx<'_>) {
+        for _ in 0..64 {
+            if browser.cursor() == 1 {
+                break;
+            }
+            let step = if browser.cursor() < 1 { 1 } else { -1 };
+            let _ = browser.apply(Control::Turn(step), ctx);
+        }
+        assert_eq!(browser.cursor(), 1, "could not highlight sort");
+        assert_eq!(browser.apply(Control::Press, ctx), Effect::None);
+    }
+
+    #[test]
     fn the_platter_changes_volume_and_the_top_row_keeps_it() {
         let libraries = state(Vec::new());
         let settings = Settings::new();
@@ -1847,10 +2035,11 @@ mod tests {
         assert_eq!(browser.frame(&ctx).pinned.text, back("House"));
 
         let count = browser.frame(&ctx).items.len();
+        let shift = usize::from(browser.frame(&ctx).sort.is_some());
         let cursor = i32::try_from(browser.cursor()).unwrap();
-        let last = i32::try_from(count).unwrap();
+        let last = i32::try_from(count + shift).unwrap();
         let _ = browser.apply(Control::Turn(last - cursor), &ctx);
-        assert_eq!(browser.cursor(), count);
+        assert_eq!(browser.cursor(), count + shift);
         assert!(!browser.footer_selected(&ctx));
         let _ = browser.apply(Control::Turn(1), &ctx);
         assert!(browser.footer_selected(&ctx));

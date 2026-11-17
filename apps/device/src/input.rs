@@ -5,6 +5,8 @@
 //! one row; faster detents move two, four, or eight rows. The round key, and
 //! Enter during development, press the highlighted row. The pinned row is
 //! one detent above the first item and stays on screen while the list scrolls.
+//! A track list adds Sort on the title line, between the pinned row and the
+//! first track. That control stays put while the tracks scroll.
 //! When a screen offers the playing line, it is one detent below the last
 //! item and stays at the bottom of the screen.
 //!
@@ -293,8 +295,17 @@ pub struct Highlight {
 /// One row to draw. The pinned row is always first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Row {
-    Pinned { selected: bool },
-    Item { index: usize, selected: bool },
+    Pinned {
+        selected: bool,
+    },
+    /// Sort, drawn on the title line. It does not scroll with the tracks.
+    Sort {
+        selected: bool,
+    },
+    Item {
+        index: usize,
+        selected: bool,
+    },
 }
 
 impl Highlight {
@@ -327,12 +338,14 @@ impl Highlight {
     /// the scrolling rows; the screen draws it under the list.
     #[cfg(test)]
     pub fn move_by(&mut self, steps: i32, item_count: usize, visible_items: usize, footer: bool) {
-        self.move_skipping(steps, item_count, visible_items, footer, |_| false);
+        self.move_skipping(steps, item_count, visible_items, footer, false, |_| false);
     }
 
     /// Moves by `steps`. Dead rows are jumped and never highlighted.
     ///
-    /// `dead` sees the highlight index. The pinned row is 0. Item `n` is `n + 1`.
+    /// `dead` sees the highlight index. The pinned row is 0. Item `n` is
+    /// `n + 1`, or `n + 2` when `sort` is set. `sort` is the title-line
+    /// control: index 1, drawn above the tracks, and it does not scroll.
     /// One step lands on the next row that does something. `footer` adds one
     /// stop after the last item. That stop is not one of the scrolling rows;
     /// the screen draws it under the list.
@@ -342,9 +355,10 @@ impl Highlight {
         item_count: usize,
         visible_items: usize,
         footer: bool,
+        sort: bool,
         dead: impl Fn(usize) -> bool,
     ) {
-        let last = item_count + usize::from(footer);
+        let last = item_count + usize::from(sort) + usize::from(footer);
         let direction = steps.signum();
         let mut left = steps.unsigned_abs();
         while left > 0 {
@@ -354,26 +368,28 @@ impl Highlight {
             }
             left -= 1;
         }
-        self.reveal(item_count, visible_items);
+        self.reveal(item_count, visible_items, sort);
     }
 
     /// Keeps the highlight inside a list that shrank, and off a row that does nothing.
     #[cfg(test)]
     pub fn fit(&mut self, item_count: usize, visible_items: usize, footer: bool) {
-        self.fit_live(item_count, visible_items, footer, |_| false);
+        self.fit_live(item_count, visible_items, footer, false, |_| false);
     }
 
     /// Keeps the highlight inside a list that shrank.
     ///
     /// A dead row moves to the next live row, then the previous one.
+    /// `sort` matches [`Self::move_skipping`].
     pub fn fit_live(
         &mut self,
         item_count: usize,
         visible_items: usize,
         footer: bool,
+        sort: bool,
         dead: impl Fn(usize) -> bool,
     ) {
-        let last = item_count + usize::from(footer);
+        let last = item_count + usize::from(sort) + usize::from(footer);
         if self.index > last {
             self.index = last;
         }
@@ -384,29 +400,31 @@ impl Highlight {
                 self.index = prev;
             }
         }
-        self.reveal(item_count, visible_items);
+        self.reveal(item_count, visible_items, sort);
     }
 
     /// The highlight is on the playing line under the list.
     #[must_use]
-    pub fn on_footer(self, item_count: usize) -> bool {
-        self.index == item_count + 1
+    pub fn on_footer(self, item_count: usize, sort: bool) -> bool {
+        self.index == item_count + 1 + usize::from(sort)
     }
 
-    fn reveal(&mut self, item_count: usize, visible_items: usize) {
+    fn reveal(&mut self, item_count: usize, visible_items: usize, sort: bool) {
         if item_count == 0 {
             self.scroll = 0;
             return;
         }
         let visible = visible_items.max(1);
-        if (1..=item_count).contains(&self.index) {
-            let item = self.index - 1;
+        let shift = 1 + usize::from(sort);
+        let last_item = item_count + usize::from(sort);
+        if (shift..=last_item).contains(&self.index) {
+            let item = self.index - shift;
             if item < self.scroll {
                 self.scroll = item;
             } else if item >= self.scroll.saturating_add(visible) {
                 self.scroll = item + 1 - visible;
             }
-        } else if self.index > item_count {
+        } else if self.index > last_item {
             self.scroll = item_count.saturating_sub(visible);
         }
         let max_scroll = item_count.saturating_sub(visible);
@@ -414,19 +432,25 @@ impl Highlight {
     }
 
     #[must_use]
-    pub fn rows(self, item_count: usize, visible_items: usize) -> Vec<Row> {
+    pub fn rows(self, item_count: usize, visible_items: usize, sort: bool) -> Vec<Row> {
         let mut rows = vec![Row::Pinned {
             selected: self.index == 0,
         }];
+        if sort {
+            rows.push(Row::Sort {
+                selected: self.index == 1,
+            });
+        }
         if item_count == 0 {
             return rows;
         }
         let visible = visible_items.max(1);
         let end = (self.scroll + visible).min(item_count);
+        let shift = 1 + usize::from(sort);
         for index in self.scroll..end {
             rows.push(Row::Item {
                 index,
-                selected: self.index == index + 1,
+                selected: self.index == index + shift,
             });
         }
         rows
@@ -633,7 +657,10 @@ mod tests {
     fn a_level_screen_starts_on_its_pinned_row() {
         let highlight = Highlight::pinned();
         assert_eq!(highlight.index(), 0);
-        assert_eq!(highlight.rows(0, 8), vec![Row::Pinned { selected: true }]);
+        assert_eq!(
+            highlight.rows(0, 8, false),
+            vec![Row::Pinned { selected: true }]
+        );
     }
 
     #[test]
@@ -642,7 +669,10 @@ mod tests {
         assert_eq!(highlight.index(), 1);
         highlight.move_by(-1, 5, 8, false);
         assert_eq!(highlight.index(), 0);
-        assert_eq!(highlight.rows(5, 8)[0], Row::Pinned { selected: true });
+        assert_eq!(
+            highlight.rows(5, 8, false)[0],
+            Row::Pinned { selected: true }
+        );
     }
 
     #[test]
@@ -667,22 +697,22 @@ mod tests {
     fn a_turn_skips_a_row_that_does_nothing() {
         let dead = |index: usize| index == 1 || index == 4;
         let mut highlight = Highlight::pinned();
-        highlight.move_skipping(1, 5, 8, false, dead);
+        highlight.move_skipping(1, 5, 8, false, false, dead);
         assert_eq!(highlight.index(), 2);
-        highlight.move_skipping(2, 5, 8, false, dead);
+        highlight.move_skipping(2, 5, 8, false, false, dead);
         assert_eq!(highlight.index(), 5);
-        highlight.move_skipping(1, 5, 8, false, dead);
+        highlight.move_skipping(1, 5, 8, false, false, dead);
         assert_eq!(highlight.index(), 5);
-        highlight.move_skipping(-1, 5, 8, false, dead);
+        highlight.move_skipping(-1, 5, 8, false, false, dead);
         assert_eq!(highlight.index(), 3);
-        highlight.move_skipping(-5, 5, 8, false, dead);
+        highlight.move_skipping(-5, 5, 8, false, false, dead);
         assert_eq!(highlight.index(), 0);
     }
 
     #[test]
     fn a_dead_row_is_left_when_the_list_changes() {
         let mut highlight = Highlight::new(5);
-        highlight.fit_live(5, 8, false, |index| index == 1);
+        highlight.fit_live(5, 8, false, false, |index| index == 1);
         assert_eq!(highlight.index(), 2);
     }
 
@@ -690,7 +720,7 @@ mod tests {
     fn the_pinned_row_stays_put_while_the_list_scrolls() {
         let mut highlight = Highlight::new(30);
         highlight.move_by(12, 30, 8, false);
-        let rows = highlight.rows(30, 8);
+        let rows = highlight.rows(30, 8, false);
         assert_eq!(rows[0], Row::Pinned { selected: false });
         assert!(rows
             .iter()
@@ -704,14 +734,15 @@ mod tests {
         highlight.move_by(29, 30, 8, true);
         assert_eq!(highlight.index(), 30);
         highlight.move_by(1, 30, 8, true);
-        assert!(highlight.on_footer(30));
+        assert!(highlight.on_footer(30, false));
         highlight.move_by(4, 30, 8, true);
-        assert!(highlight.on_footer(30));
-        let rows = highlight.rows(30, 8);
+        assert!(highlight.on_footer(30, false));
+        let rows = highlight.rows(30, 8, false);
         assert_eq!(rows[0], Row::Pinned { selected: false });
         assert!(rows.iter().all(|row| match row {
             Row::Item { selected, .. } => !selected,
             Row::Pinned { selected } => !selected,
+            Row::Sort { selected } => !selected,
         }));
         assert_eq!(
             rows.last(),
@@ -724,7 +755,30 @@ mod tests {
         assert_eq!(highlight.index(), 30);
         highlight.fit(30, 8, false);
         assert_eq!(highlight.index(), 30);
-        assert!(!highlight.on_footer(30));
+        assert!(!highlight.on_footer(30, false));
+    }
+
+    #[test]
+    fn sort_stays_on_the_title_line_while_the_tracks_scroll() {
+        let mut highlight = Highlight::pinned();
+        highlight.move_skipping(1, 30, 8, false, true, |_| false);
+        assert_eq!(highlight.index(), 1);
+        let rows = highlight.rows(30, 8, true);
+        assert_eq!(rows[0], Row::Pinned { selected: false });
+        assert_eq!(rows[1], Row::Sort { selected: true });
+        highlight.move_skipping(1, 30, 8, false, true, |_| false);
+        assert_eq!(highlight.index(), 2);
+        highlight.move_skipping(20, 30, 8, false, true, |_| false);
+        let rows = highlight.rows(30, 8, true);
+        assert_eq!(rows[1], Row::Sort { selected: false });
+        assert!(rows
+            .iter()
+            .any(|row| matches!(row, Row::Item { selected: true, .. })));
+        highlight.move_skipping(100, 30, 8, true, true, |_| false);
+        assert!(highlight.on_footer(30, true));
+        highlight.move_skipping(-1, 30, 8, true, true, |_| false);
+        assert_eq!(highlight.index(), 31);
+        assert!(!highlight.on_footer(30, true));
     }
 
     #[test]
@@ -735,7 +789,7 @@ mod tests {
         highlight.fit(2, 8, false);
         assert_eq!(highlight.index(), 2);
         assert_eq!(
-            highlight.rows(2, 8),
+            highlight.rows(2, 8, false),
             vec![
                 Row::Pinned { selected: false },
                 Row::Item {
