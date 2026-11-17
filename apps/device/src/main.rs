@@ -1,20 +1,22 @@
 //! Wall player for a Raspberry Pi, also run on this computer while developing.
 //!
-//! The window is the size of the 7" panel. A background thread scans volumes
-//! through [`djusb_core`], and the window lists the libraries it loaded.
-//! Arrow keys turn the highlight and Enter presses it. On the Pi the platter
-//! and the round key do the same. Pressing an export plays it.
+//! The window is the size of the 7" panel and is drawn as a radio display:
+//! phosphor green on black. A background thread scans volumes through
+//! [`djusb_core`]. Arrow keys turn the highlight and Enter presses it. On
+//! the Pi the platter and the round key do the same.
 
+mod chrome;
 #[cfg(target_os = "linux")]
 mod gpio;
 mod home;
 mod input;
 #[allow(
     dead_code,
-    reason = "the now-playing screen and the visualizers use the rest of the player"
+    reason = "the visualizers use the audio copy the player keeps for them"
 )]
 mod playback;
 mod playing;
+mod screens;
 #[cfg(test)]
 mod token_gen;
 mod tokens;
@@ -22,30 +24,21 @@ mod tokens;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use djusb_core::logic::{find_playlist, list_entries, order_key};
 use djusb_core::{
     settings_path, LibraryManager, LibraryState, ScanHandle, Settings, Volume, SCAN_INTERVAL,
 };
 use iced::theme::Palette;
-use iced::widget::{column, container, text};
-use iced::{Element, Fill, Padding, Point, Size, Subscription, Task, Theme};
+use iced::{Element, Point, Size, Subscription, Task, Theme};
 
-use home::{home_lines, HomeLine, EMPTY_HOME};
-use input::{apply_control, Applied, Highlight};
 use playback::{Player, Status};
-use playing::{build_queue, status_line, Playing};
-use tokens::{color, font, space};
+use playing::{cue_from_entries, now_header, status_line, Playing};
+use screens::{Browser, Ctx, Effect, PlaySnap};
 
 /// Raspberry Pi Touch Display 2, turned on its side. The panel's native
 /// pixels are 720×1280, and on the wall the long edge is horizontal.
 const PANEL_WIDTH: f32 = 1280.0;
 const PANEL_HEIGHT: f32 = 720.0;
-
-/// The home screen's pinned row.
-const SETTINGS: &str = "Settings";
-
-/// Item rows under the pinned row. The panel is 720 pixels tall, and the
-/// status line takes the bottom.
-const VISIBLE_ITEMS: usize = 7;
 
 /// How often the status line follows the player.
 const STATUS_INTERVAL: Duration = Duration::from_millis(250);
@@ -58,17 +51,17 @@ fn place_on_screen(window: Size, monitor: Size) -> Point {
     )
 }
 
-/// The window uses the shared palette. The toolkit also has a warning
-/// colour, which this shell does not, so that slot stays the dark theme's.
+/// Phosphor on black. The toolkit's warning colour is unused, so that slot
+/// stays the dark theme's.
 fn theme(_app: &App) -> Theme {
     Theme::custom(
         "DJ USB",
         Palette {
-            background: color::BG,
-            text: color::TEXT,
-            primary: color::ACCENT,
-            success: color::SERATO,
-            danger: color::ERROR,
+            background: chrome::BACKGROUND,
+            text: chrome::FOREGROUND,
+            primary: chrome::FOREGROUND,
+            success: chrome::FOREGROUND,
+            danger: chrome::ALERT,
             ..Palette::DARK
         },
     )
@@ -78,6 +71,7 @@ fn main() -> iced::Result {
     iced::application(App::boot, App::update, App::view)
         .title("DJ USB")
         .theme(theme)
+        .font(chrome::FACE_BYTES)
         .window_size((PANEL_WIDTH, PANEL_HEIGHT))
         .position(iced::window::Position::SpecificWith(place_on_screen))
         .subscription(App::subscription)
@@ -92,12 +86,10 @@ struct App {
     state: LibraryState,
     keys: input::DeviceInput,
     key_origin: Instant,
-    highlight: Highlight,
+    browser: Browser,
     player: Player,
     playing: Option<Playing>,
     status: Status,
-    /// Playlist orders and preferences. The settings screen reads this.
-    #[expect(dead_code, reason = "the settings screen in phase 4 reads this")]
     settings: Settings,
 }
 
@@ -115,8 +107,10 @@ impl App {
         let libraries = Arc::new(LibraryManager::new(|_| {}));
         let scan = libraries.start_scanning(SCAN_INTERVAL, remembered_volumes());
         let state = libraries.state();
-        let highlight = Highlight::new(home_lines(&state).len());
+        let settings = load_settings();
+        let browser = Browser::new(settings.volume_limit(), &state);
         let player = Player::start();
+        player.set_volume(browser.volume());
         let status = player.status();
         Self {
             libraries,
@@ -124,11 +118,11 @@ impl App {
             state,
             keys: input::DeviceInput::new(),
             key_origin: Instant::now(),
-            highlight,
+            browser,
             player,
             playing: None,
             status,
-            settings: load_settings(),
+            settings,
         }
     }
 
@@ -136,8 +130,12 @@ impl App {
         match message {
             Message::Refresh => {
                 self.state = self.libraries.state();
-                self.highlight
-                    .fit(home_lines(&self.state).len(), VISIBLE_ITEMS);
+                let play = self.play_snap();
+                self.browser.refresh(&Ctx {
+                    state: &self.state,
+                    settings: &self.settings,
+                    play,
+                });
             }
             Message::Tick => self.status = self.player.status(),
             Message::Keyboard(event) => {
@@ -156,39 +154,105 @@ impl App {
     }
 
     fn follow(&mut self, control: input::Control) {
-        let lines = home_lines(&self.state);
-        let applied = apply_control(&mut self.highlight, control, lines.len(), VISIBLE_ITEMS);
-        // Row 0 is the pinned Settings row, which opens nothing yet.
-        if let Applied::Pressed(row) = applied {
-            if let Some(HomeLine::Export {
-                library: Some(id), ..
-            }) = row.checked_sub(1).and_then(|index| lines.get(index))
-            {
-                self.play_library(id);
+        let play = self.play_snap();
+        let effect = self.browser.apply(
+            control,
+            &Ctx {
+                state: &self.state,
+                settings: &self.settings,
+                play,
+            },
+        );
+        self.perform(effect);
+    }
+
+    fn perform(&mut self, effect: Effect) {
+        match effect {
+            Effect::None => {}
+            Effect::Toggle => {
+                self.player.toggle();
+                self.status = self.player.status();
+            }
+            Effect::Restart => {
+                self.player.jump(0);
+                self.player.play();
+                self.status = self.player.status();
+            }
+            Effect::Volume(level) => {
+                self.player.set_volume(level);
+                self.status = self.player.status();
+            }
+            Effect::Limit { limit, volume } => {
+                self.settings.set_volume_limit(limit);
+                if let Err(error) = self.settings.save(&settings_path()) {
+                    eprintln!("Settings could not be saved: {error}");
+                }
+                self.player.set_volume(volume);
+                self.status = self.player.status();
+            }
+            Effect::Play {
+                library_id,
+                playlist_id,
+                index,
+            } => {
+                if self.load_cue(&library_id, playlist_id.as_deref(), index) {
+                    let play = self.play_snap();
+                    self.browser.confirm_play(&Ctx {
+                        state: &self.state,
+                        settings: &self.settings,
+                        play,
+                    });
+                }
             }
         }
     }
 
-    /// Plays the export's tracks from the first, or pauses and resumes it.
-    fn play_library(&mut self, id: &str) {
-        if self
-            .playing
-            .as_ref()
-            .is_some_and(|playing| playing.library == id)
-            && !self.status.ended
-        {
-            self.player.toggle();
-        } else if let Some(library) = self.state.libraries.iter().find(|library| library.id == id) {
-            let (queue, titles) = build_queue(library, |track| {
-                self.libraries.resolve_track_path(&library.id, track)
-            });
-            self.player.load(queue, 0);
-            self.playing = Some(Playing {
-                library: id.to_string(),
-                titles,
-            });
-        }
+    /// Loads the list on screen at `index`. A missing file loads nothing.
+    fn load_cue(&mut self, library_id: &str, playlist_id: Option<&str>, index: usize) -> bool {
+        let entries = {
+            let Some(library) = self
+                .state
+                .libraries
+                .iter()
+                .find(|library| library.id == library_id)
+            else {
+                return false;
+            };
+            let playlist = match playlist_id {
+                Some(id) => match find_playlist(&library.playlists, id) {
+                    Some(node) => Some(node),
+                    None => return false,
+                },
+                None => None,
+            };
+            let order = playlist_id.and_then(|id| self.settings.order(&order_key(library_id, id)));
+            list_entries(Some(library), playlist, order, None)
+        };
+        let Some(cue) = cue_from_entries(
+            &entries,
+            index,
+            |id| self.libraries.resolve_track_path(library_id, id),
+            |id| self.libraries.resolve_artwork_path(library_id, id),
+        ) else {
+            return false;
+        };
+        self.player.load(cue.paths, cue.start);
+        self.playing = Some(Playing {
+            titles: cue.titles,
+            artists: cue.artists,
+            track_titles: cue.track_titles,
+            artworks: cue.artworks,
+        });
         self.status = self.player.status();
+        true
+    }
+
+    fn play_snap(&self) -> PlaySnap {
+        PlaySnap {
+            loaded: self.playing.is_some(),
+            running: self.status.playing(),
+            ended: self.status.ended,
+        }
     }
 
     fn subscription(_app: &Self) -> Subscription<Message> {
@@ -202,67 +266,24 @@ impl App {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let items = home_lines(&self.state);
-        let mut rows = Vec::new();
-        for entry in self.highlight.rows(items.len(), VISIBLE_ITEMS) {
-            rows.push(match entry {
-                input::Row::Pinned { selected } => {
-                    lined(text(SETTINGS).size(font::size::WALL).into(), selected)
-                }
-                input::Row::Item { index, selected } => {
-                    lined(line_body(items[index].clone()), selected)
-                }
-            });
-        }
-        let titles = self
+        let play = self.play_snap();
+        let ctx = Ctx {
+            state: &self.state,
+            settings: &self.settings,
+            play,
+        };
+        let frame = self.browser.frame(&ctx);
+        let shown = self.browser.shown(&ctx);
+        let header = self
             .playing
             .as_ref()
-            .map_or(&[][..], |playing| playing.titles.as_slice());
-        let status = status_line(&self.status, titles).unwrap_or_default();
-        let list = column(rows).spacing(space::SM).width(Fill).height(Fill);
-        container(column![list, text(status).size(font::size::WALL_DETAIL)].spacing(space::LG))
-            .padding(space::XXL)
-            .width(Fill)
-            .height(Fill)
-            .into()
-    }
-}
-
-fn line_body(line: HomeLine) -> Element<'static, Message> {
-    match line {
-        HomeLine::Volume(name) => text(name).size(font::size::WALL).into(),
-        HomeLine::Export { label, detail, .. } => {
-            container(text(format!("{label} · {detail}")).size(font::size::WALL_DETAIL))
-                .padding(Padding {
-                    left: space::INDENT,
-                    ..Padding::ZERO
-                })
-                .into()
-        }
-        HomeLine::Empty => text(EMPTY_HOME).size(font::size::WALL_DETAIL).into(),
-    }
-}
-
-fn lined(content: Element<'static, Message>, selected: bool) -> Element<'static, Message> {
-    container(content)
-        .padding(Padding {
-            top: space::ROW,
-            bottom: space::ROW,
-            left: space::LG,
-            right: space::LG,
-        })
-        .width(Fill)
-        .style(move |_theme| row_style(selected))
-        .into()
-}
-
-fn row_style(selected: bool) -> container::Style {
-    if selected {
-        container::Style::default()
-            .background(color::ACCENT)
-            .color(color::TEXT)
-    } else {
-        container::Style::default()
+            .and_then(|playing| now_header(&self.status, playing));
+        let status = self
+            .playing
+            .as_ref()
+            .and_then(|playing| status_line(&self.status, &playing.titles))
+            .unwrap_or_default();
+        chrome::screen(frame, shown, header, status)
     }
 }
 

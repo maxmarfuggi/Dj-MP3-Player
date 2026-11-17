@@ -57,7 +57,7 @@ pub fn home_lines(state: &LibraryState) -> Vec<HomeLine> {
 }
 
 /// The names the desktop sidebar uses for each export.
-fn source_label(source: LibrarySource) -> &'static str {
+pub(crate) fn source_label(source: LibrarySource) -> &'static str {
     match source {
         LibrarySource::Rekordbox => "Device Library",
         LibrarySource::DeviceLibraryPlus => "Device Library Plus",
@@ -65,7 +65,7 @@ fn source_label(source: LibrarySource) -> &'static str {
     }
 }
 
-fn tracks_label(count: usize) -> String {
+pub(crate) fn tracks_label(count: usize) -> String {
     match count {
         1 => "1 track".to_string(),
         n => format!("{n} tracks"),
@@ -92,7 +92,7 @@ fn group_mut<'a>(groups: &'a mut Vec<Group>, path: &str, name: &str) -> &'a mut 
 }
 
 /// A volume with no label is shown by its path, so the row is never blank.
-fn volume_name(name: &str, path: &str) -> String {
+pub(crate) fn volume_name(name: &str, path: &str) -> String {
     if name.is_empty() {
         path.to_string()
     } else {

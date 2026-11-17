@@ -260,11 +260,13 @@ desktop's look.
 - [x] **4.1 Design tokens** · 1–2 days · after 3.1
   - One tokens file for colours, fonts and spacing, generating CSS variables
     for the desktop and Rust constants for the device.
-- [ ] **4.2 Screens** · 8–12 days · after 3.2 and 4.1
+- [x] **4.2 Screens** · 8–12 days · after 3.2 and 4.1
   - USB sources, playlists, tracks, now playing, visualizers, and settings
     (Bluetooth, volume limit, about and licences). Each screen follows
     [Device controls](#device-controls): one highlighted row, a pinned top
     row, and type large enough to read from the wall.
+  - The device display is a radio panel: phosphor green on black. The
+    desktop keeps the shared palette.
 - [ ] **4.3 Turntable** · 4–6 days · after 4.2
   - Render the deck's static parts from the existing SVG to images with
     `resvg`. Animate the record and tonearm in iced, reusing the maths in

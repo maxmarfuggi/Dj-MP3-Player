@@ -9,7 +9,12 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/design_tokens.rs"));
 }
 
-pub use generated::{color, font, space};
+#[allow(
+    unused_imports,
+    reason = "the token tests compare the shared palette; the display uses phosphor colours"
+)]
+pub use generated::color;
+pub use generated::{font, space};
 
 #[cfg(test)]
 mod tests {

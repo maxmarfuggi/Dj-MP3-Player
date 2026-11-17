@@ -15,6 +15,8 @@ use serde_json::{Map, Value};
 pub struct Settings {
     orders: BTreeMap<String, Vec<String>>,
     energy_flow_open: bool,
+    /// Loudest playback level, from 0 to 1. The desktop does not set this.
+    volume_limit: f32,
     /// Fields this version does not use, kept for the next save.
     extra: Map<String, Value>,
 }
@@ -24,6 +26,7 @@ impl Default for Settings {
         Self {
             orders: BTreeMap::new(),
             energy_flow_open: false,
+            volume_limit: 1.0,
             extra: Map::new(),
         }
     }
@@ -65,6 +68,7 @@ impl Settings {
             ));
         };
         let energy_flow_open = matches!(map.remove("energyFlowOpen"), Some(Value::Bool(true)));
+        let volume_limit = unit_level(map.remove("volumeLimit"));
         let orders = match map.remove("customPlaylistOrders") {
             Some(Value::Object(entries)) => parse_orders(&entries),
             _ => BTreeMap::new(),
@@ -72,6 +76,7 @@ impl Settings {
         Ok(Self {
             orders,
             energy_flow_open,
+            volume_limit,
             extra: map,
         })
     }
@@ -91,6 +96,9 @@ impl Settings {
             "energyFlowOpen".to_string(),
             Value::Bool(self.energy_flow_open),
         );
+        if !is_full_level(self.volume_limit) {
+            map.insert("volumeLimit".to_string(), json_level(self.volume_limit));
+        }
         for (key, value) in &self.extra {
             map.insert(key.clone(), value.clone());
         }
@@ -125,6 +133,22 @@ impl Settings {
 
     pub fn set_energy_flow_open(&mut self, open: bool) {
         self.energy_flow_open = open;
+    }
+
+    /// The loudest level the wall player will play, from 0 to 1.
+    #[must_use]
+    pub fn volume_limit(&self) -> f32 {
+        self.volume_limit
+    }
+
+    /// Stores a level from 0 to 1. Anything else is brought inside that range,
+    /// and a non-finite value means full volume.
+    pub fn set_volume_limit(&mut self, limit: f32) {
+        self.volume_limit = if limit.is_finite() {
+            limit.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
     }
 }
 
@@ -170,6 +194,36 @@ enum Host {
     Windows,
     Mac,
     Other,
+}
+
+/// A finite number is clamped to 0..=1. Anything else means full volume.
+fn unit_level(value: Option<Value>) -> f32 {
+    let Some(Value::Number(number)) = value else {
+        return 1.0;
+    };
+    let Some(level) = number.as_f64() else {
+        return 1.0;
+    };
+    if !level.is_finite() {
+        return 1.0;
+    }
+    level.clamp(0.0, 1.0) as f32
+}
+
+/// Full volume is left out of the file, so an older file keeps its shape.
+fn is_full_level(level: f32) -> bool {
+    (f64::from(level).clamp(0.0, 1.0) * 100.0).round() >= 100.0
+}
+
+/// Two decimal places, which is one percent.
+fn json_level(level: f32) -> Value {
+    let percent = (f64::from(level).clamp(0.0, 1.0) * 100.0)
+        .round()
+        .clamp(0.0, 100.0);
+    let text = format!("{:.2}", percent / 100.0);
+    text.parse::<serde_json::Number>()
+        .map(Value::Number)
+        .unwrap_or(Value::from(0))
 }
 
 fn parse_orders(entries: &Map<String, Value>) -> BTreeMap<String, Vec<String>> {
@@ -356,15 +410,55 @@ mod tests {
     #[test]
     fn unknown_fields_are_kept() {
         let mut settings = Settings::from_json(
-            r#"{"volumeLimit": 0.8, "energyFlowOpen": true, "customPlaylistOrders": {}, "name": "wall"}"#,
+            r#"{"speaker": "kitchen", "energyFlowOpen": true, "customPlaylistOrders": {}, "name": "wall"}"#,
         )
         .unwrap();
         settings.set_energy_flow_open(false);
         let text = settings.to_json();
-        assert!(text.contains("\"volumeLimit\": 0.8"), "{text}");
+        assert!(text.contains("\"speaker\": \"kitchen\""), "{text}");
         assert!(text.contains("\"name\": \"wall\""), "{text}");
         let again = Settings::from_json(&text).unwrap();
         assert_eq!(again.to_json(), text);
+    }
+
+    #[test]
+    fn the_volume_limit_is_a_level_from_zero_to_one() {
+        assert_eq!(Settings::new().volume_limit(), 1.0);
+        assert_eq!(Settings::from_json("{}").unwrap().volume_limit(), 1.0);
+        let limited = Settings::from_json(r#"{"volumeLimit": 0.4}"#).unwrap();
+        assert!((limited.volume_limit() - 0.4).abs() < 0.001);
+        assert_eq!(
+            Settings::from_json(r#"{"volumeLimit": 4}"#)
+                .unwrap()
+                .volume_limit(),
+            1.0
+        );
+        assert_eq!(
+            Settings::from_json(r#"{"volumeLimit": -1}"#)
+                .unwrap()
+                .volume_limit(),
+            0.0
+        );
+        assert_eq!(
+            Settings::from_json(r#"{"volumeLimit": "loud"}"#)
+                .unwrap()
+                .volume_limit(),
+            1.0
+        );
+
+        let mut settings = Settings::new();
+        settings.set_volume_limit(0.4);
+        let again = Settings::from_json(&settings.to_json()).unwrap();
+        assert!((again.volume_limit() - 0.4).abs() < 0.001);
+        assert!(
+            again.to_json().contains("volumeLimit"),
+            "{}",
+            again.to_json()
+        );
+        settings.set_volume_limit(1.0);
+        assert!(!settings.to_json().contains("volumeLimit"));
+        settings.set_volume_limit(f32::NAN);
+        assert_eq!(settings.volume_limit(), 1.0);
     }
 
     #[test]

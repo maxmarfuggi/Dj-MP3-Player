@@ -1,20 +1,41 @@
-//! The line under the home list that says what is playing.
+//! The track on screen, and the line under the list while you browse.
 //!
-//! Pressing an export plays its tracks in order, and pressing it again
-//! pauses. The now-playing screen replaces this line later.
+//! Now playing shows the artist, title, and artwork. The line at the bottom
+//! of the other screens uses the same names.
 
 use std::path::PathBuf;
 use std::time::Duration;
 
-use djusb_core::logic::format_time;
-use djusb_core::Library;
+use djusb_core::logic::{format_time, TrackEntry};
 
 use crate::playback::Status;
 
-/// The queue loaded from one export.
+/// The queue loaded from one list.
 pub struct Playing {
-    pub library: String,
+    /// "Artist – Title", in queue order. The status line uses these.
     pub titles: Vec<String>,
+    pub artists: Vec<String>,
+    pub track_titles: Vec<String>,
+    pub artworks: Vec<Option<PathBuf>>,
+}
+
+/// One list ready to play. `start` is the pressed row, after tracks with no
+/// file have been left out.
+pub struct Cue {
+    pub paths: Vec<PathBuf>,
+    pub titles: Vec<String>,
+    pub artists: Vec<String>,
+    pub track_titles: Vec<String>,
+    pub artworks: Vec<Option<PathBuf>>,
+    pub start: usize,
+}
+
+/// The block above the now-playing rows.
+pub struct NowHeader {
+    pub artist: String,
+    pub title: String,
+    pub clock: String,
+    pub artwork: Option<PathBuf>,
 }
 
 /// The name shown for a track: the artist and title, or the title alone.
@@ -27,21 +48,63 @@ pub fn track_name(artist: &str, title: &str) -> String {
     }
 }
 
-/// The library's tracks in order, with the names to show beside them.
-/// Tracks whose file `resolve` cannot place are left out.
+/// The list on screen, in that order, without tracks whose file is missing.
+///
+/// `None` means the pressed row has no file, so nothing should load.
 #[must_use]
-pub fn build_queue(
-    library: &Library,
+pub fn cue_from_entries(
+    entries: &[TrackEntry],
+    index: usize,
     resolve: impl Fn(&str) -> Option<PathBuf>,
-) -> (Vec<PathBuf>, Vec<String>) {
-    library
-        .tracks
-        .iter()
-        .filter_map(|track| {
-            let path = resolve(&track.id)?;
-            Some((path, track_name(&track.artist, &track.title)))
-        })
-        .unzip()
+    artwork: impl Fn(&str) -> Option<PathBuf>,
+) -> Option<Cue> {
+    let chosen = entries.get(index)?;
+    resolve(&chosen.track.id)?;
+    let mut cue = Cue {
+        paths: Vec::new(),
+        titles: Vec::new(),
+        artists: Vec::new(),
+        track_titles: Vec::new(),
+        artworks: Vec::new(),
+        start: 0,
+    };
+    for (at, entry) in entries.iter().enumerate() {
+        let Some(path) = resolve(&entry.track.id) else {
+            continue;
+        };
+        if at == index {
+            cue.start = cue.paths.len();
+        }
+        cue.paths.push(path);
+        cue.titles
+            .push(track_name(&entry.track.artist, &entry.track.title));
+        cue.artists.push(entry.track.artist.clone());
+        cue.track_titles.push(entry.track.title.clone());
+        cue.artworks.push(artwork(&entry.track.id));
+    }
+    Some(cue)
+}
+
+/// The track heard, for the block above the now-playing rows.
+#[must_use]
+pub fn now_header(status: &Status, playing: &Playing) -> Option<NowHeader> {
+    let index = status.track?;
+    Some(NowHeader {
+        artist: playing.artists.get(index).cloned().unwrap_or_default(),
+        title: playing.track_titles.get(index)?.clone(),
+        clock: header_clock(status),
+        artwork: playing.artworks.get(index).cloned().flatten(),
+    })
+}
+
+fn header_clock(status: &Status) -> String {
+    if status.ended {
+        return "Finished".to_string();
+    }
+    match status.length {
+        Some(length) => format!("{} / {}", clock(status.position), clock(length)),
+        None => clock(status.position),
+    }
 }
 
 /// The status line, or `None` when nothing has played.
@@ -76,10 +139,11 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Duration;
 
-    use djusb_core::{Library, LibrarySource, Track};
+    use djusb_core::Track;
 
-    use super::{build_queue, status_line, track_name};
+    use super::{cue_from_entries, now_header, status_line, track_name, Playing};
     use crate::playback::{Status, TrackError};
+    use djusb_core::logic::TrackEntry;
 
     fn status() -> Status {
         Status {
@@ -99,27 +163,75 @@ mod tests {
         vec!["One".to_string(), "Two".to_string()]
     }
 
+    fn entry(id: &str, title: &str) -> TrackEntry {
+        let track = track(id, title);
+        TrackEntry {
+            key: track.id.clone(),
+            track,
+        }
+    }
+
     #[test]
     fn the_queue_leaves_out_tracks_without_a_file() {
-        let library = Library {
-            id: "rekordbox-1".to_string(),
-            source: LibrarySource::Rekordbox,
-            volume_name: "USB".to_string(),
-            volume_path: "/media/usb".to_string(),
-            tracks: vec![track("a", "One"), track("b", "Two"), track("c", "Three")],
-            playlists: Vec::new(),
-        };
-        let (paths, names) = build_queue(&library, |id| {
-            (id != "b").then(|| PathBuf::from(format!("/media/usb/{id}.mp3")))
-        });
+        let entries = vec![entry("a", "One"), entry("b", "Two"), entry("c", "Three")];
+        let cue = cue_from_entries(
+            &entries,
+            2,
+            |id| (id != "b").then(|| PathBuf::from(format!("/media/usb/{id}.mp3"))),
+            |id| (id == "c").then(|| PathBuf::from("/media/usb/c.jpg")),
+        )
+        .unwrap();
         assert_eq!(
-            paths,
+            cue.paths,
             vec![
                 PathBuf::from("/media/usb/a.mp3"),
                 PathBuf::from("/media/usb/c.mp3")
             ]
         );
-        assert_eq!(names, vec!["Artist – One", "Artist – Three"]);
+        assert_eq!(cue.titles, vec!["Artist – One", "Artist – Three"]);
+        assert_eq!(cue.start, 1);
+        assert_eq!(
+            cue.artworks[1].as_deref(),
+            Some(PathBuf::from("/media/usb/c.jpg").as_path())
+        );
+    }
+
+    #[test]
+    fn a_row_with_no_file_does_not_load() {
+        let entries = vec![entry("a", "One")];
+        assert!(cue_from_entries(&entries, 0, |_| None, |_| None).is_none());
+        assert!(
+            cue_from_entries(&entries, 3, |_| Some(PathBuf::from("a.mp3")), |_| None).is_none()
+        );
+    }
+
+    #[test]
+    fn the_header_names_the_track_that_is_heard() {
+        let playing = Playing {
+            titles: vec!["Artist – Two".to_string()],
+            artists: vec!["Artist".to_string()],
+            track_titles: vec!["Two".to_string()],
+            artworks: vec![Some(PathBuf::from("two.jpg"))],
+        };
+        let heard = Status {
+            track: Some(0),
+            ..status()
+        };
+        let header = now_header(&heard, &playing).unwrap();
+        assert_eq!(header.artist, "Artist");
+        assert_eq!(header.title, "Two");
+        assert_eq!(header.clock, "1:23 / 5:00");
+        assert_eq!(
+            header.artwork.as_deref(),
+            Some(PathBuf::from("two.jpg").as_path())
+        );
+
+        let ended = Status {
+            track: Some(0),
+            ended: true,
+            ..status()
+        };
+        assert_eq!(now_header(&ended, &playing).unwrap().clock, "Finished");
     }
 
     fn track(id: &str, title: &str) -> Track {

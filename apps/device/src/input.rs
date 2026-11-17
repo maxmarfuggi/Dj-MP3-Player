@@ -304,6 +304,16 @@ impl Highlight {
         }
     }
 
+    /// Starts on the pinned row. A level screen uses this: the platter changes
+    /// the value, and the highlighted row is the one that leaves.
+    #[must_use]
+    pub fn pinned() -> Self {
+        Self {
+            index: 0,
+            scroll: 0,
+        }
+    }
+
     #[must_use]
     pub fn index(self) -> usize {
         self.index
@@ -536,6 +546,13 @@ mod tests {
         );
         assert_eq!(dev_key(&Key::Named(Named::Enter), true), None);
         assert_eq!(dev_key(&Key::Named(Named::Space), false), None);
+    }
+
+    #[test]
+    fn a_level_screen_starts_on_its_pinned_row() {
+        let highlight = Highlight::pinned();
+        assert_eq!(highlight.index(), 0);
+        assert_eq!(highlight.rows(0, 8), vec![Row::Pinned { selected: true }]);
     }
 
     #[test]

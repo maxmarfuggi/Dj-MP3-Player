@@ -21,6 +21,7 @@ iced = { version = "0.14.0", default-features = false, features = [
     "tokio",
     "x11",
     "wayland",
+    "image",
 ] }
 # Playback. symphonia decodes, rubato converts to the output's sample rate,
 # cpal plays through ALSA (and PipeWire's ALSA plugin) on the Pi and WASAPI

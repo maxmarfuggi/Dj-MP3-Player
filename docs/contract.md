@@ -271,4 +271,6 @@ A missing `customPlaylistOrders`, or one that is not a JSON object, means there 
 
 `energyFlowOpen` is whether the energy-flow chart is open. It is one preference for the whole app, not one per playlist. Missing or any value other than `true` means closed.
 
+`volumeLimit` is the loudest level the wall player will play, from 0 to 1. It is missing when the limit is full. A missing value, or any value that is not a finite number, means 1. Numbers below 0 or above 1 are brought inside that range. The desktop does not read or write this field.
+
 The desktop stores the two fields under those names. `customPlaylistOrders` is the object above as a JSON string. `energyFlowOpen` is the string `true` or `false`. A device file is the whole object, with `energyFlowOpen` as a boolean. Unknown fields are kept, so a newer version of the file still loads.
