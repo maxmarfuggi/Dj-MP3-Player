@@ -72,6 +72,7 @@ fn clock(time: Duration) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::path::PathBuf;
     use std::time::Duration;
 
@@ -89,6 +90,7 @@ mod tests {
             ended: false,
             volume: 1.0,
             track_error: None,
+            failed: BTreeSet::new(),
             output_error: None,
         }
     }

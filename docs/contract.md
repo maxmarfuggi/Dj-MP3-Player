@@ -252,7 +252,7 @@ The UI asks for audio with `media://track/<libraryId>/<trackId>` and for artwork
 
 ## Settings
 
-Custom playlist orders and the other preferences are saved off the USB, as one JSON object. The desktop keeps the fields in `localStorage` for now. The device writes the same object to a file. Either way the volume is not touched.
+Custom playlist orders and the other preferences are saved off the USB, as one JSON object. The desktop keeps the fields in `localStorage` for now. The device writes the same object to `settings.json` in its config directory: `%APPDATA%\djusb` on Windows, `~/Library/Application Support/djusb` on macOS, and `$XDG_CONFIG_HOME/djusb` or `~/.config/djusb` on Linux. Either way the volume is not touched.
 
 ```json
 {

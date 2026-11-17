@@ -19,7 +19,9 @@ mod playing;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use djusb_core::{LibraryManager, LibraryState, ScanHandle, Volume, SCAN_INTERVAL};
+use djusb_core::{
+    settings_path, LibraryManager, LibraryState, ScanHandle, Settings, Volume, SCAN_INTERVAL,
+};
 use iced::widget::{column, container, text};
 use iced::{Color, Element, Fill, Padding, Point, Size, Subscription, Task, Theme};
 
@@ -73,6 +75,9 @@ struct App {
     player: Player,
     playing: Option<Playing>,
     status: Status,
+    /// Playlist orders and preferences. The settings screen reads this.
+    #[expect(dead_code, reason = "the settings screen in phase 4 reads this")]
+    settings: Settings,
 }
 
 #[derive(Debug, Clone)]
@@ -102,6 +107,7 @@ impl App {
             player,
             playing: None,
             status,
+            settings: load_settings(),
         }
     }
 
@@ -234,6 +240,22 @@ fn row_style(selected: bool) -> container::Style {
             .color(Color::WHITE)
     } else {
         container::Style::default()
+    }
+}
+
+/// Saved orders and preferences. A missing file is the default, and a broken
+/// file is left in place.
+fn load_settings() -> Settings {
+    let path = settings_path();
+    match Settings::load(&path) {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!(
+                "Settings could not be read from {}: {error}",
+                path.display()
+            );
+            Settings::new()
+        }
     }
 }
 

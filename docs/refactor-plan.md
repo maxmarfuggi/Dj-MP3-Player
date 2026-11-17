@@ -243,11 +243,11 @@ On the Pi, list a USB and play it.
   - Decode with symphonia, play through cpal or PipeWire. Queue, seek,
     volume, and a copy of the audio for the visualizers through a ring
     buffer.
-- [ ] **3.4 Player rules in the core** · 2–4 days · after 3.3
+- [x] **3.4 Player rules in the core** · 2–4 days · after 3.3
   - Move the desktop's queue behaviour from `usePlayer.ts` into
     `djusb-core`: "previous" restarts the track within 3 seconds, the queue
     reorders without interrupting playback, failed tracks are skipped.
-- [ ] **3.5 Settings storage** · 1 day · after 0.7
+- [x] **3.5 Settings storage** · 1 day · after 0.7
   - Settings and custom orders in a JSON file, in the contract's format.
 
 *Phase done when:* the Pi lists a USB and plays to wired or Bluetooth output.

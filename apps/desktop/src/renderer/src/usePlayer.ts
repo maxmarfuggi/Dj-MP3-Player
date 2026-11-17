@@ -42,7 +42,10 @@ export interface Player {
   stop(): void;
 }
 
-/** Going "previous" this far into a track restarts it instead. */
+/**
+ * Going "previous" this far into a track restarts it instead.
+ * The wall player uses the same rules in `djusb-core`'s player.
+ */
 const RESTART_THRESHOLD_SEC = 3;
 
 export function queueItemKey(item: Pick<QueueItem, 'libraryId' | 'track'>): string {

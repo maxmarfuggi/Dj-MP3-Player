@@ -11,9 +11,10 @@
 //! or Bluetooth speaker is whichever PipeWire has chosen. When the output is
 //! lost the engine reopens it and carries on from the position last heard.
 //!
-//! The queue rules here are the plain ones: "previous" always goes back one
-//! track, and a track that fails stops the queue. The desktop's rules move
-//! into `djusb-core` later.
+//! "Previous", the end of the queue, and a track that fails follow
+//! [`djusb_core::Playback`]: previous restarts the track after three seconds,
+//! and a failed track is skipped. Reordering a queue keeps the current entry,
+//! which [`djusb_core::Playback::reorder`] decides.
 
 mod convert;
 mod decode;
@@ -21,6 +22,7 @@ mod engine;
 mod output;
 mod scope;
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Sender};
@@ -45,8 +47,10 @@ pub struct Status {
     pub ended: bool,
     /// From 0 to 1.
     pub volume: f32,
-    /// The last track that could not be played.
+    /// The last track that could not be played, when the queue then stopped.
     pub track_error: Option<TrackError>,
+    /// `queue/<index>` for entries that could not be played. A skip keeps these.
+    pub failed: BTreeSet<String>,
     /// Why no audio output is open, while none is.
     pub output_error: Option<String>,
 }
@@ -147,6 +151,7 @@ impl Player {
             ended: shared.ended.load(Ordering::Acquire),
             volume: shared.volume(),
             track_error: problems.track.clone(),
+            failed: problems.failed.clone(),
             output_error: problems.output.clone(),
         }
     }
@@ -203,6 +208,7 @@ struct Shared {
 #[derive(Default)]
 struct Problems {
     track: Option<TrackError>,
+    failed: BTreeSet<String>,
     output: Option<String>,
 }
 

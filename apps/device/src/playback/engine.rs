@@ -6,6 +6,8 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use djusb_core::{Change, Playback, QueueItem};
+
 use super::convert::Converter;
 use super::decode::Source;
 use super::output::{Marker, Output};
@@ -30,6 +32,7 @@ pub(super) fn run(commands: &Receiver<Command>, shared: Arc<Shared>) {
     let mut engine = Engine {
         shared,
         queue: Vec::new(),
+        playback: Playback::new(),
         output: None,
         next_output_try: Instant::now(),
         resume: None,
@@ -59,6 +62,7 @@ pub(super) fn run(commands: &Receiver<Command>, shared: Arc<Shared>) {
 struct Engine {
     shared: Arc<Shared>,
     queue: Vec<PathBuf>,
+    playback: Playback,
     output: Option<Output>,
     next_output_try: Instant,
     /// Where to start once an output opens. Only set while none is open.
@@ -88,27 +92,43 @@ impl Engine {
     fn handle(&mut self, command: Command) {
         match command {
             Command::Load { queue, start } => {
-                self.queue = queue;
-                lock(&self.shared.problems).track = None;
-                self.start(start, Duration::ZERO);
-                self.unpause();
+                let items = (0..queue.len())
+                    .map(|index| QueueItem {
+                        library_id: "queue".to_string(),
+                        track_id: index.to_string(),
+                        entry_key: format!("entry-{index}"),
+                    })
+                    .collect();
+                if let Change::Start(index) = self.playback.play(items, start, "queue") {
+                    self.queue = queue;
+                    lock(&self.shared.problems).track = None;
+                    self.start(index, Duration::ZERO);
+                    self.unpause();
+                }
             }
             Command::Jump(index) => {
                 self.start(index, Duration::ZERO);
                 self.unpause();
             }
-            Command::Next => match self.heard_track() {
-                Some(index) if index + 1 < self.queue.len() => {
-                    self.start(index + 1, Duration::ZERO);
-                    self.unpause();
+            Command::Next => {
+                if let Some(index) = self.heard_track() {
+                    if let Change::Start(next) = self.playback.next(index) {
+                        self.start(next, Duration::ZERO);
+                        self.unpause();
+                    }
                 }
-                Some(_) => self.stop(),
-                None => {}
-            },
+            }
             Command::Previous => {
                 if let Some(index) = self.heard_track() {
-                    self.start(index.saturating_sub(1), Duration::ZERO);
-                    self.unpause();
+                    match self.playback.previous(index, self.heard_position()) {
+                        Change::Start(previous) => {
+                            self.start(previous, Duration::ZERO);
+                            self.unpause();
+                        }
+                        // A restart keeps the pause the listener already chose.
+                        Change::Restart => self.start(index, Duration::ZERO),
+                        Change::Reordered | Change::Pause | Change::Unchanged => {}
+                    }
                 }
             }
             Command::Seek(to) => {
@@ -122,6 +142,15 @@ impl Engine {
 
     fn unpause(&self) {
         self.shared.paused.store(false, Ordering::Release);
+    }
+
+    /// Where the listener is in the current entry.
+    fn heard_position(&self) -> Duration {
+        if let Some((_, at)) = self.resume {
+            return at;
+        }
+        let rate = self.shared.output_rate.load(Ordering::Acquire);
+        to_duration(self.shared.position.load(Ordering::Acquire), rate)
     }
 
     /// The queue entry heard, ended or not.
@@ -265,17 +294,6 @@ impl Engine {
         lock(&self.shared.problems).track = None;
     }
 
-    /// Stops now, dropping whatever is buffered.
-    fn stop(&mut self) {
-        self.pending.clear();
-        if let Some(output) = &self.output {
-            self.shared
-                .discard_until
-                .store(output.written(), Ordering::Release);
-        }
-        self.end();
-    }
-
     /// Stops after what is already buffered.
     fn end(&mut self) {
         self.current = None;
@@ -290,10 +308,39 @@ impl Engine {
         }
     }
 
-    fn fail(&mut self, index: usize, message: String) {
-        eprintln!("Track {} could not play: {message}", index + 1);
-        lock(&self.shared.problems).track = Some(TrackError { index, message });
-        self.end();
+    fn fail(&mut self, mut index: usize, mut message: String) {
+        loop {
+            eprintln!("Track {} could not play: {message}", index + 1);
+            let change = self.playback.track_failed(index);
+            let mut problems = lock(&self.shared.problems);
+            problems.failed.clone_from(self.playback.failed());
+            match change {
+                Change::Start(next) => {
+                    problems.track = None;
+                    drop(problems);
+                    if self.output.is_none() {
+                        self.start(next, Duration::ZERO);
+                        return;
+                    }
+                    match Source::open(&self.queue[next]) {
+                        Ok(source) => {
+                            self.begin(next, source, Duration::ZERO);
+                            return;
+                        }
+                        Err(error) => {
+                            index = next;
+                            message = error;
+                        }
+                    }
+                }
+                Change::Restart | Change::Reordered | Change::Pause | Change::Unchanged => {
+                    problems.track = Some(TrackError { index, message });
+                    drop(problems);
+                    self.end();
+                    return;
+                }
+            }
+        }
     }
 
     /// Moves audio towards the output. Returns false when there was nothing to do.
@@ -337,5 +384,99 @@ impl Engine {
             Read::Failed(index, message) => self.fail(index, message),
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    use djusb_core::Playback;
+
+    use super::super::{lock, Shared};
+    use super::{Command, Engine};
+
+    fn engine(shared: Arc<Shared>) -> Engine {
+        Engine {
+            shared,
+            queue: Vec::new(),
+            playback: Playback::new(),
+            output: None,
+            next_output_try: Instant::now(),
+            resume: None,
+            current: None,
+            decoded: Vec::new(),
+            pending: Vec::new(),
+        }
+    }
+
+    fn paths(count: usize) -> Vec<PathBuf> {
+        (0..count)
+            .map(|index| PathBuf::from(format!("track-{index}.mp3")))
+            .collect()
+    }
+
+    #[test]
+    fn previous_restarts_after_three_seconds_and_steps_back_before_that() {
+        let shared = Arc::new(Shared::new());
+        let mut engine = engine(Arc::clone(&shared));
+        engine.handle(Command::Load {
+            queue: paths(3),
+            start: 1,
+        });
+        assert_eq!(shared.track.load(Ordering::Acquire), 1);
+
+        shared.paused.store(true, Ordering::Release);
+        engine.handle(Command::Seek(Duration::from_secs(3)));
+        engine.handle(Command::Previous);
+        assert_eq!(shared.track.load(Ordering::Acquire), 1);
+        assert_eq!(shared.position.load(Ordering::Acquire), 0);
+        assert!(shared.paused.load(Ordering::Acquire));
+
+        engine.handle(Command::Previous);
+        assert_eq!(shared.track.load(Ordering::Acquire), 0);
+        assert!(!shared.paused.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn next_on_the_last_track_leaves_it_playing() {
+        let shared = Arc::new(Shared::new());
+        let mut engine = engine(Arc::clone(&shared));
+        engine.handle(Command::Load {
+            queue: paths(2),
+            start: 1,
+        });
+        engine.handle(Command::Next);
+        assert_eq!(shared.track.load(Ordering::Acquire), 1);
+        assert!(!shared.ended.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn a_failed_track_is_skipped_and_the_last_one_stops() {
+        let shared = Arc::new(Shared::new());
+        let mut engine = engine(Arc::clone(&shared));
+        engine.handle(Command::Load {
+            queue: paths(3),
+            start: 0,
+        });
+        engine.fail(0, "missing".to_string());
+        assert_eq!(shared.track.load(Ordering::Acquire), 1);
+        assert!(!shared.ended.load(Ordering::Acquire));
+        assert!(lock(&shared.problems).failed.contains("queue/0"));
+        assert!(lock(&shared.problems).track.is_none());
+
+        engine.fail(2, "missing".to_string());
+        assert!(shared.ended.load(Ordering::Acquire));
+        assert_eq!(
+            lock(&shared.problems)
+                .track
+                .as_ref()
+                .map(|error| error.index),
+            Some(2)
+        );
+        assert!(lock(&shared.problems).failed.contains("queue/2"));
     }
 }
