@@ -2,8 +2,8 @@
 //!
 //! Each one redraws itself from the audio copy. The waveform is the desktop
 //! oscilloscope: a rising-zero lock, a twenty-second colour cycle, and a
-//! trail. The equalizer is the desktop's default mirror style, fed by the
-//! log bands and a smoothed FFT.
+//! trail. The equalizer is the desktop's mirror, LED, and fire styles, fed
+//! by the log bands and a smoothed FFT.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -35,9 +35,38 @@ pub fn waveform<Message: 'static>(scope: Arc<Scope>) -> Element<'static, Message
         .into()
 }
 
+/// Mirror, LED, and Fire. The same three styles as the desktop equalizer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EqualizerTheme {
+    Mirror,
+    Led,
+    Fire,
+}
+
+impl EqualizerTheme {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Mirror => "Mirror",
+            Self::Led => "LED",
+            Self::Fire => "Fire",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::Mirror => Self::Led,
+            Self::Led => Self::Fire,
+            Self::Fire => Self::Mirror,
+        }
+    }
+}
+
 /// The live spectrum, bars above a reflection.
-pub fn equalizer<Message: 'static>(scope: Arc<Scope>) -> Element<'static, Message> {
-    iced::widget::canvas(Equalizer { scope })
+pub fn equalizer<Message: 'static>(
+    scope: Arc<Scope>,
+    theme: EqualizerTheme,
+) -> Element<'static, Message> {
+    iced::widget::canvas(Equalizer { scope, theme })
         .width(FillLength)
         .height(FillLength)
         .into()
@@ -163,6 +192,7 @@ fn stroke_wave(frame: &mut canvas::Frame, points: &[(f32, f32)], hue: f32, alpha
 
 struct Equalizer {
     scope: Arc<Scope>,
+    theme: EqualizerTheme,
 }
 
 struct EqualizerState {
@@ -250,7 +280,7 @@ impl<Message> canvas::Program<Message> for Equalizer {
         _cursor: iced::mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
-        paint_equalizer(&mut frame, state);
+        paint_equalizer(&mut frame, state, self.theme);
         if state.idle {
             idle_message(&mut frame, "Press play to start the equalizer.");
         }
@@ -258,18 +288,72 @@ impl<Message> canvas::Program<Message> for Equalizer {
     }
 }
 
-fn paint_equalizer(frame: &mut canvas::Frame, state: &EqualizerState) {
+struct MirrorPalette {
+    edge: Color,
+    middle: Color,
+    bars: &'static [Color],
+    reflection: [Color; 2],
+    baseline: Color,
+    peak: Color,
+}
+
+const MIRROR: MirrorPalette = MirrorPalette {
+    edge: Color::from_rgb8(0x0c, 0x0a, 0x1f),
+    middle: Color::from_rgb8(0x2a, 0x1a, 0x55),
+    bars: &[
+        Color::from_rgb8(0x7b, 0x4d, 0xff),
+        Color::from_rgb8(0x3f, 0x8c, 0xff),
+        Color::from_rgb8(0x43, 0xe6, 0xff),
+        Color::from_rgb8(0xb8, 0xff, 0xf4),
+    ],
+    reflection: [
+        Color::from_rgba8(67, 230, 255, 0.45),
+        Color::from_rgba8(123, 77, 255, 0.0),
+    ],
+    baseline: Color::from_rgba8(184, 255, 244, 0.6),
+    peak: Color::WHITE,
+};
+
+const FIRE: MirrorPalette = MirrorPalette {
+    edge: Color::from_rgb8(0x05, 0x03, 0x03),
+    middle: Color::from_rgb8(0x2a, 0x0d, 0x06),
+    bars: &[
+        Color::from_rgb8(0xb3, 0x14, 0x0c),
+        Color::from_rgb8(0xf0, 0x5a, 0x14),
+        Color::from_rgb8(0xff, 0xb8, 0x1f),
+        Color::from_rgb8(0xff, 0xe4, 0x4a),
+        Color::from_rgb8(0xff, 0xf7, 0xa8),
+    ],
+    reflection: [
+        Color::from_rgba8(255, 140, 30, 0.45),
+        Color::from_rgba8(179, 20, 12, 0.0),
+    ],
+    baseline: Color::from_rgba8(255, 220, 140, 0.6),
+    peak: Color::from_rgb8(0xff, 0xf8, 0xd6),
+};
+
+fn paint_equalizer(frame: &mut canvas::Frame, state: &EqualizerState, theme: EqualizerTheme) {
+    match theme {
+        EqualizerTheme::Led => paint_led(frame, state),
+        EqualizerTheme::Mirror => paint_mirror(frame, state, &MIRROR),
+        EqualizerTheme::Fire => paint_mirror(frame, state, &FIRE),
+    }
+}
+
+fn paint_mirror(frame: &mut canvas::Frame, state: &EqualizerState, palette: &MirrorPalette) {
     let width = frame.width();
     let height = frame.height();
-    let edge = Color::from_rgb8(0x0c, 0x0a, 0x1f);
-    let middle = Color::from_rgb8(0x2a, 0x1a, 0x55);
     frame.fill_rectangle(
         Point::ORIGIN,
         frame.size(),
         fill_gradient(vertical(
             0.0,
             height,
-            &[(0.0, edge), (0.64, middle), (1.0, edge)],
+            &[
+                (0.0, palette.edge),
+                (0.64, palette.middle),
+                (1.0, palette.edge),
+            ],
         )),
     );
 
@@ -280,20 +364,11 @@ fn paint_equalizer(frame: &mut canvas::Frame, state: &EqualizerState) {
     let slot = width / columns;
     let bar_width = (slot - (slot * 0.22).max(1.0)).max(1.0);
     let cap_height = (span * 0.008).round().max(2.0);
-    let bars = [
-        Color::from_rgb8(0x7b, 0x4d, 0xff),
-        Color::from_rgb8(0x3f, 0x8c, 0xff),
-        Color::from_rgb8(0x43, 0xe6, 0xff),
-        Color::from_rgb8(0xb8, 0xff, 0xf4),
-    ];
-    let rising = fill_gradient(vertical(base, top, &stops(&bars)));
+    let rising = fill_gradient(vertical(base, top, &stops(palette.bars)));
     let reflection = fill_gradient(vertical(
         base,
         base + span * 0.45,
-        &[
-            (0.0, Color::from_rgba8(67, 230, 255, 0.45)),
-            (1.0, Color::from_rgba8(123, 77, 255, 0.0)),
-        ],
+        &[(0.0, palette.reflection[0]), (1.0, palette.reflection[1])],
     ));
     for (index, level) in state.levels.iter().enumerate() {
         let x = index as f32 * slot;
@@ -315,15 +390,89 @@ fn paint_equalizer(frame: &mut canvas::Frame, state: &EqualizerState) {
             frame.fill_rectangle(
                 Point::new(x, base - peak * span - cap_height * 2.0),
                 Size::new(bar_width, cap_height),
-                Color::WHITE,
+                palette.peak,
             );
         }
     }
     frame.fill_rectangle(
         Point::new(0.0, base),
         Size::new(width, 1.0),
-        Color::from_rgba8(184, 255, 244, 0.6),
+        palette.baseline,
     );
+}
+
+/// Desktop LED: each light covers two bars, green then yellow then red.
+fn paint_led(frame: &mut canvas::Frame, state: &EqualizerState) {
+    let width = frame.width();
+    let height = frame.height();
+    if width < 1.0 || height < 1.0 {
+        return;
+    }
+    frame.fill_rectangle(Point::ORIGIN, frame.size(), Color::BLACK);
+    let columns = (BAR_COUNT / 2).max(1);
+    let slot = width / columns as f32;
+    let top = height * 0.05;
+    let base = height * 0.96;
+    let rows = ((base - top) / slot).floor().max(4.0) as usize;
+    let row_pitch = (base - top) / rows as f32;
+    let radius = slot.min(row_pitch) * 0.34;
+    if radius < 0.5 || rows == 0 {
+        return;
+    }
+    for column in 0..columns {
+        for row in 0..rows {
+            let center = led_center(column, row, slot, base, row_pitch);
+            frame.fill(
+                &Path::circle(center, radius),
+                with_alpha(led_color(row, rows), 0.09),
+            );
+        }
+    }
+    for column in 0..columns {
+        let left = column * 2;
+        let right = left + 1;
+        let level = state
+            .levels
+            .get(left)
+            .copied()
+            .unwrap_or(0.0)
+            .max(state.levels.get(right).copied().unwrap_or(0.0));
+        let peak = state
+            .peaks
+            .get(left)
+            .map_or(0.0, |peak| peak.level)
+            .max(state.peaks.get(right).map_or(0.0, |peak| peak.level));
+        let lit = (level * rows as f32).round() as usize;
+        let peak_row = (peak * rows as f32).round() as i32;
+        let peak_row = peak_row.min(i32::try_from(rows).unwrap_or(i32::MAX)) - 1;
+        for row in 0..rows {
+            if row >= lit && i32::try_from(row).unwrap_or(i32::MAX) != peak_row {
+                continue;
+            }
+            let color = led_color(row, rows);
+            let center = led_center(column, row, slot, base, row_pitch);
+            frame.fill(&Path::circle(center, radius * 2.2), with_alpha(color, 0.31));
+            frame.fill(&Path::circle(center, radius), color);
+        }
+    }
+}
+
+fn led_center(column: usize, row: usize, slot: f32, base: f32, row_pitch: f32) -> Point {
+    Point::new(
+        (column as f32 + 0.5) * slot,
+        base - (row as f32 + 0.5) * row_pitch,
+    )
+}
+
+fn led_color(row: usize, rows: usize) -> Color {
+    let position = (row as f32 + 0.5) / rows.max(1) as f32;
+    if position >= 0.85 {
+        Color::from_rgb8(0xff, 0x3b, 0x30)
+    } else if position >= 0.6 {
+        Color::from_rgb8(0xff, 0xd8, 0x3a)
+    } else {
+        Color::from_rgb8(0x3d, 0xff, 0x6e)
+    }
 }
 
 fn idle_message(frame: &mut canvas::Frame, message: &str) {

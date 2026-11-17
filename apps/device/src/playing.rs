@@ -1,7 +1,8 @@
 //! The track on screen, and the line under the list while you browse.
 //!
 //! Now playing shows the artist, title, and artwork. The line at the bottom
-//! of the other screens uses the same names.
+//! of the other screens uses the same names. On a list, that line is the
+//! last stop, and pressing it opens this screen.
 
 use std::path::PathBuf;
 use std::time::Duration;

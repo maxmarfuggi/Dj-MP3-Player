@@ -97,16 +97,13 @@ impl Context {
         self.apply_viewport();
     }
 
-    pub(crate) fn read(&self, into: &mut [u8]) -> Result<(), String> {
+    /// Reads one buffer. `0` is the window; any other id is a framebuffer.
+    pub(crate) fn read_from(&self, target: u32, into: &mut [u8]) -> Result<(), String> {
         let needed = byte_count(self.width, self.height)?;
         if into.len() < needed {
             return Err("MilkDrop frame is the wrong size.".to_string());
         }
-        if let Some(capture) = &self.capture {
-            self.bind(capture.fbo);
-        } else {
-            self.bind(0);
-        }
+        self.bind(target);
         self.apply_viewport();
         unsafe {
             (self.gl.pixel_store)(GL_PACK_ALIGNMENT, 1);
@@ -472,10 +469,10 @@ mod platform {
                 }
                 return Err("MilkDrop could not choose an OpenGL format.".to_string());
             }
-            let context = unsafe { wglCreateContext(dc) };
-            if context == 0 || unsafe { wglMakeCurrent(dc, context) } == 0 {
-                if context != 0 {
-                    unsafe { wglDeleteContext(context) };
+            let legacy = unsafe { wglCreateContext(dc) };
+            if legacy == 0 || unsafe { wglMakeCurrent(dc, legacy) } == 0 {
+                if legacy != 0 {
+                    unsafe { wglDeleteContext(legacy) };
                 }
                 unsafe {
                     ReleaseDC(window, dc);
@@ -483,6 +480,16 @@ mod platform {
                 }
                 return Err("MilkDrop could not start OpenGL.".to_string());
             }
+            let context = match core_context(dc, legacy) {
+                Ok(context) => context,
+                Err(message) => {
+                    unsafe {
+                        ReleaseDC(window, dc);
+                        DestroyWindow(window);
+                    }
+                    return Err(message);
+                }
+            };
             Ok(Self {
                 window,
                 dc,
@@ -531,6 +538,37 @@ mod platform {
                 DestroyWindow(self.window);
             }
         }
+    }
+
+    /// Replaces the legacy context with an OpenGL 3.3 core context.
+    ///
+    /// projectM crashes inside `projectm_create` on the legacy context
+    /// `wglCreateContext` returns. The legacy context is deleted here.
+    fn core_context(dc: isize, legacy: isize) -> Result<isize, String> {
+        type Create = unsafe extern "system" fn(isize, isize, *const i32) -> isize;
+        let symbol = CString::new("wglCreateContextAttribsARB").expect("name is static");
+        let create = unsafe { super::fn_ptr::<Create>(wglGetProcAddress(symbol.as_ptr())) };
+        let Some(create) = create else {
+            unsafe {
+                wglMakeCurrent(0, 0);
+                wglDeleteContext(legacy);
+            }
+            return Err("MilkDrop needs OpenGL 3.3.".to_string());
+        };
+        // WGL_CONTEXT_MAJOR_VERSION_ARB, MINOR, PROFILE_MASK, CORE_PROFILE_BIT.
+        let attribs = [0x2091, 3, 0x2092, 3, 0x9126, 0x0001, 0];
+        let core = unsafe { create(dc, 0, attribs.as_ptr()) };
+        unsafe {
+            wglMakeCurrent(0, 0);
+            wglDeleteContext(legacy);
+        }
+        if core == 0 || unsafe { wglMakeCurrent(dc, core) } == 0 {
+            if core != 0 {
+                unsafe { wglDeleteContext(core) };
+            }
+            return Err("MilkDrop needs OpenGL 3.3.".to_string());
+        }
+        Ok(core)
     }
 
     unsafe extern "system" fn window_proc(
@@ -885,4 +923,55 @@ pub(crate) struct Platform {
 
 fn failed(ptr: *const c_void) -> bool {
     ptr.is_null() || (ptr as isize).unsigned_abs() <= 3
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use std::path::PathBuf;
+
+    #[test]
+    fn projectm_starts_on_a_core_context() {
+        let dll = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../apps/device/projectm/projectM-4.dll");
+        if !dll.is_file() {
+            return;
+        }
+        let context = super::Context::open(64, 64).expect("context");
+        let api = crate::api::Api::load(&dll).expect("library");
+        let instance = api.create();
+        assert!(!instance.is_null(), "projectM did not start");
+        let (width, height) = context.size();
+        api.configure(instance, width, height);
+        let preset = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../apps/device/presets/built-in/phosphor.milk");
+        let path = std::ffi::CString::new(preset.to_string_lossy().as_ref()).expect("path");
+        api.load_preset(instance, path.as_ptr(), false);
+        let mut tone = Vec::with_capacity(4096);
+        for frame in 0..2048 {
+            let sample = (frame as f32 * 0.15).sin();
+            tone.push(sample);
+            tone.push(sample * 0.6);
+        }
+        let mut pixels = vec![0; usize::try_from(width * height * 4).unwrap_or(0)];
+        let target = if api.renders_into_fbo() {
+            context.fbo()
+        } else {
+            None
+        };
+        for _ in 0..30 {
+            api.add_pcm(instance, &tone);
+            if target.is_none() {
+                context.bind_default();
+            }
+            api.render(instance, target);
+        }
+        context
+            .read_from(target.unwrap_or(0), &mut pixels)
+            .expect("read");
+        let lit = pixels.iter().filter(|byte| **byte > 8).count();
+        assert!(lit > 100, "the drawn buffer was black ({lit} lit pixels)");
+        api.destroy(instance);
+        drop(api);
+        drop(context);
+    }
 }

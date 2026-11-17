@@ -133,6 +133,7 @@ fn library_dirs() -> Vec<PathBuf> {
     if let Some(dir) = std::env::var_os("DJUSB_PROJECTM") {
         dirs.push(PathBuf::from(dir));
     }
+    dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("projectm"));
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             dirs.push(dir.to_path_buf());

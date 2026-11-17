@@ -24,7 +24,9 @@ type PcmAdd = unsafe extern "C" fn(*mut c_void, *const f32, u32, i32);
 type PcmMax = unsafe extern "C" fn() -> u32;
 
 pub(crate) struct Api {
+    /// Unloaded after projectM. GLEW must still be mapped while the library closes.
     _library: Library,
+    _glew: Option<Library>,
     create: Create,
     destroy: Destroy,
     load_file: LoadFile,
@@ -43,8 +45,12 @@ pub(crate) struct Api {
 
 impl Api {
     pub(crate) fn load(path: &Path) -> Result<Self, String> {
+        // The 4.1 Windows build resolves GL through GLEW and crashes in
+        // projectm_create unless the host initialized that same library.
+        let glew = init_glew(path)?;
         let library = open_library(path)?;
         Ok(Self {
+            _glew: glew,
             create: required(&library, b"projectm_create\0")?,
             destroy: required(&library, b"projectm_destroy\0")?,
             load_file: required(&library, b"projectm_load_preset_file\0")?,
@@ -107,6 +113,11 @@ impl Api {
         unsafe { (self.load_file)(instance, path, u8::from(blend)) };
     }
 
+    /// The 4.2 entry point draws into a framebuffer. 4.1 only draws to the window.
+    pub(crate) fn renders_into_fbo(&self) -> bool {
+        self.render_fbo.is_some()
+    }
+
     pub(crate) fn render(&self, instance: *mut c_void, fbo: Option<u32>) {
         unsafe {
             if let (Some(render_fbo), Some(fbo)) = (self.render_fbo, fbo) {
@@ -129,6 +140,32 @@ impl Api {
         }
         unsafe { (self.pcm_add)(instance, samples.as_ptr(), count, STEREO) };
     }
+}
+
+/// Loads `glew32.dll` beside projectM and initializes it on the current context.
+fn init_glew(projectm: &Path) -> Result<Option<Library>, String> {
+    let Some(glew) = projectm.parent().map(|dir| dir.join("glew32.dll")) else {
+        return Ok(None);
+    };
+    if !glew.is_file() {
+        return Ok(None);
+    }
+    let library = open_library(&glew)?;
+    unsafe {
+        let flag = library
+            .get::<*mut u8>(b"glewExperimental\0")
+            .map_err(|_| "OpenGL support library is missing glewExperimental.".to_string())?;
+        **flag = 1;
+        type Init = unsafe extern "C" fn() -> u32;
+        let init = library
+            .get::<Init>(b"glewInit\0")
+            .map_err(|_| "OpenGL support library is missing glewInit.".to_string())?;
+        let code = init();
+        if code != 0 {
+            return Err(format!("OpenGL support library failed ({code})."));
+        }
+    }
+    Ok(Some(library))
 }
 
 /// Per-pixel mesh. Even, and inside the range projectM keeps (8 to 300).

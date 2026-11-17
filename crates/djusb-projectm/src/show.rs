@@ -190,12 +190,21 @@ fn render<F>(
         pull(&mut cursor, &mut samples);
         tail_frames(&mut samples, BACKLOG_FRAMES);
         feed(&live.api, instance, &samples);
-        let fbo = live.context.fbo();
-        if fbo.is_none() {
+        // 4.1 draws into the window. Reading the unused capture framebuffer
+        // copies a black picture.
+        let target = if live.api.renders_into_fbo() {
+            live.context.fbo()
+        } else {
+            None
+        };
+        if target.is_none() {
             live.context.bind_default();
         }
-        live.api.render(instance, fbo);
-        if live.context.read(&mut buffer).is_ok()
+        live.api.render(instance, target);
+        if live
+            .context
+            .read_from(target.unwrap_or(0), &mut buffer)
+            .is_ok()
             && flip_rows(
                 usize::try_from(width).unwrap_or(0),
                 usize::try_from(height).unwrap_or(0),

@@ -4,6 +4,14 @@
 //! list it opens settings, and on every other screen it returns. A level
 //! screen is the exception the controls describe: the platter changes the
 //! value, and the pinned row is what leaves, keeping the value.
+//!
+//! While a queue is loaded, the playing line under the list is the last
+//! stop. Pressing it opens now playing. A level screen keeps that line as
+//! information, because the platter is already spoken for.
+//!
+//! A visualizer keeps that menu above the picture. Full screen clears it,
+//! and the next turn of the platter brings it back. On the equalizer, Theme
+//! cycles Mirror, LED, and Fire.
 
 use std::path::PathBuf;
 
@@ -16,6 +24,7 @@ use djusb_projectm::{licence_lines, Pack};
 use crate::home::{home_lines, source_label, tracks_label, volume_name, HomeLine, EMPTY_HOME};
 use crate::input::{Control, Highlight, Row};
 use crate::playing::track_name;
+use crate::visualizer::EqualizerTheme;
 
 /// Item rows under the pinned row. The panel is 720 pixels tall.
 pub const VISIBLE_ROWS: usize = 7;
@@ -31,6 +40,9 @@ pub struct Browser {
     origin: Option<Origin>,
     volume: u8,
     limit: u8,
+    /// The menu is hidden and the picture fills the screen.
+    fullscreen: bool,
+    theme: EqualizerTheme,
 }
 
 /// What the screen needs from the player and the libraries.
@@ -39,6 +51,8 @@ pub struct Ctx<'a> {
     pub settings: &'a Settings,
     pub play: PlaySnap,
     pub packs: &'a [Pack],
+    /// The line under the list. Empty when nothing is playing.
+    pub status: &'a str,
 }
 
 /// Enough of the player to label Play and Pause and to offer Now playing.
@@ -71,6 +85,8 @@ pub struct Frame {
     pub caption: Option<String>,
     pub items: Vec<Line>,
     pub mast: Mast,
+    /// The picture fills the screen and the menu is hidden.
+    pub fullscreen: bool,
 }
 
 /// One row.
@@ -100,7 +116,7 @@ pub enum Mast {
     /// The oscilloscope, drawn by the window from the audio copy.
     Waveform,
     /// The spectrum, drawn by the window from the audio copy.
-    Equalizer,
+    Equalizer(EqualizerTheme),
     /// The CDJ deck: title, key, time, tempo, and the file's waveform.
     Deck,
     /// Full-screen MilkDrop for one preset pack, drawn by the window.
@@ -214,6 +230,8 @@ enum Act {
     Licences,
     Pack(PathBuf),
     ProjectM,
+    FullScreen,
+    Theme,
 }
 
 impl Choice {
@@ -249,6 +267,8 @@ impl Browser {
             origin: None,
             volume: limit,
             limit,
+            fullscreen: false,
+            theme: EqualizerTheme::Mirror,
         }
     }
 
@@ -273,6 +293,7 @@ impl Browser {
             caption: self.caption(ctx),
             items: choices.into_iter().map(|choice| choice.line).collect(),
             mast: self.mast(ctx),
+            fullscreen: self.fullscreen && self.showing_visual(),
         }
     }
 
@@ -286,8 +307,10 @@ impl Browser {
         let before = self.place.clone();
         self.repair(ctx);
         if self.place == before {
-            self.highlight.fit(self.choices(ctx).len(), VISIBLE_ROWS);
+            self.highlight
+                .fit(self.choices(ctx).len(), VISIBLE_ROWS, self.footer(ctx));
         } else {
+            self.fullscreen = false;
             self.park(ctx);
         }
     }
@@ -295,11 +318,22 @@ impl Browser {
     #[must_use]
     pub fn apply(&mut self, control: Control, ctx: &Ctx<'_>) -> Effect {
         self.refresh(ctx);
+        // The turn that brings the menu back does not also move the highlight.
+        if self.fullscreen {
+            if matches!(control, Control::Turn(_)) {
+                self.fullscreen = false;
+            }
+            return Effect::None;
+        }
         match control {
             Control::Turn(steps) if self.on_level() => self.nudge(steps),
             Control::Turn(steps) => {
-                self.highlight
-                    .move_by(steps, self.choices(ctx).len(), VISIBLE_ROWS);
+                self.highlight.move_by(
+                    steps,
+                    self.choices(ctx).len(),
+                    VISIBLE_ROWS,
+                    self.footer(ctx),
+                );
                 Effect::None
             }
             Control::Press => self.press(ctx),
@@ -327,10 +361,34 @@ impl Browser {
         matches!(self.place, Place::Volume | Place::VolumeLimit)
     }
 
+    /// The playing line can take the highlight. Now playing and MilkDrop
+    /// already fill the screen, and a level screen uses the platter for the
+    /// value.
+    fn footer(&self, ctx: &Ctx<'_>) -> bool {
+        !ctx.status.is_empty()
+            && !self.on_level()
+            && !matches!(self.place, Place::NowPlaying | Place::Milk { .. })
+    }
+
+    /// The highlight is on the playing line.
+    #[must_use]
+    pub fn footer_selected(&self, ctx: &Ctx<'_>) -> bool {
+        self.footer(ctx) && self.highlight.on_footer(self.choices(ctx).len())
+    }
+
     fn go(&mut self, place: Place, ctx: &Ctx<'_>) {
         self.place = place;
+        self.fullscreen = false;
         self.repair(ctx);
         self.park(ctx);
+    }
+
+    /// Waveform, equalizer, deck, or a MilkDrop pack, with the picture up.
+    fn showing_visual(&self) -> bool {
+        matches!(
+            self.place,
+            Place::Visualizer(Vis::Waveform | Vis::Equalizer | Vis::Deck) | Place::Milk { .. }
+        )
     }
 
     fn park(&mut self, ctx: &Ctx<'_>) {
@@ -373,6 +431,12 @@ impl Browser {
         let index = self.highlight.index();
         if index == 0 {
             self.press_pinned(ctx);
+            return Effect::None;
+        }
+        if self.highlight.on_footer(self.choices(ctx).len()) {
+            if self.footer(ctx) {
+                self.go(Place::NowPlaying, ctx);
+            }
             return Effect::None;
         }
         let act = self
@@ -508,6 +572,11 @@ impl Browser {
                 self.go(Place::Visualizers, ctx);
                 Effect::None
             }
+            Act::Mode(Vis::MilkDrop) if ctx.packs.len() == 1 => {
+                let path = ctx.packs[0].path.clone();
+                self.go(Place::Milk { path }, ctx);
+                Effect::None
+            }
             Act::Mode(mode) => {
                 self.go(Place::Visualizer(mode), ctx);
                 Effect::None
@@ -534,6 +603,14 @@ impl Browser {
             }
             Act::ProjectM => {
                 self.go(Place::ProjectM, ctx);
+                Effect::None
+            }
+            Act::FullScreen => {
+                self.fullscreen = true;
+                Effect::None
+            }
+            Act::Theme => {
+                self.theme = self.theme.next();
                 Effect::None
             }
         }
@@ -599,12 +676,12 @@ impl Browser {
             Place::NowPlaying => self.transport_choices(ctx),
             Place::Visualizers => visualizer_choices(),
             Place::Visualizer(Vis::MilkDrop) => milk_choices(ctx.packs),
+            Place::Visualizer(mode) => show_choices(self.theme, *mode),
+            Place::Milk { .. } => show_choices(self.theme, Vis::MilkDrop),
             Place::Settings => self.settings_choices(),
             Place::Licences => licence_choices(),
             Place::Volume
             | Place::VolumeLimit
-            | Place::Visualizer(_)
-            | Place::Milk { .. }
             | Place::Bluetooth
             | Place::About
             | Place::ProjectM => Vec::new(),
@@ -699,7 +776,7 @@ impl Browser {
             Place::About => Mast::Notice(about_lines()),
             Place::Bluetooth => Mast::Notice(bluetooth_lines()),
             Place::Visualizer(Vis::Waveform) => Mast::Waveform,
-            Place::Visualizer(Vis::Equalizer) => Mast::Equalizer,
+            Place::Visualizer(Vis::Equalizer) => Mast::Equalizer(self.theme),
             Place::Visualizer(Vis::Deck) => Mast::Deck,
             Place::Visualizer(Vis::MilkDrop) if ctx.packs.is_empty() => {
                 Mast::Notice(no_pack_lines())
@@ -840,6 +917,19 @@ fn track_detail(track: &Track) -> Option<String> {
     } else {
         Some(parts.join("  "))
     }
+}
+
+/// Full screen sits under the back row. The equalizer adds Theme under that.
+fn show_choices(theme: EqualizerTheme, mode: Vis) -> Vec<Choice> {
+    let mut choices = vec![Choice::act("Full screen", None, Act::FullScreen)];
+    if mode == Vis::Equalizer {
+        choices.push(Choice::act(
+            "Theme",
+            Some(theme.label().to_string()),
+            Act::Theme,
+        ));
+    }
+    choices
 }
 
 fn visualizer_choices() -> Vec<Choice> {
@@ -1155,6 +1245,7 @@ mod tests {
             settings,
             play,
             packs: &[],
+            status: "",
         }
     }
 
@@ -1411,6 +1502,92 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn the_playing_line_is_the_last_stop_and_opens_now_playing() {
+        let libraries = state(vec![gig()]);
+        let settings = Settings::new();
+        let idle = context(&libraries, &settings, PlaySnap::idle());
+        let mut browser = Browser::new(1.0, &libraries);
+        press_text(&mut browser, &idle, "Device Library");
+        press_text(&mut browser, &idle, "House");
+        press_text(&mut browser, &idle, "Late");
+        press_text(&mut browser, &idle, "Artist – Two");
+        browser.confirm_play(&idle);
+        press_pinned(&mut browser, &idle);
+        let loaded = PlaySnap {
+            loaded: true,
+            running: true,
+            ended: false,
+        };
+        let mut ctx = context(&libraries, &settings, loaded);
+        ctx.status = "Playing · Artist – Two · 0:10 / 3:00";
+        assert_eq!(browser.frame(&ctx).pinned.text, back("House"));
+
+        let count = browser.frame(&ctx).items.len();
+        let cursor = i32::try_from(browser.cursor()).unwrap();
+        let last = i32::try_from(count).unwrap();
+        let _ = browser.apply(Control::Turn(last - cursor), &ctx);
+        assert_eq!(browser.cursor(), count);
+        assert!(!browser.footer_selected(&ctx));
+        let _ = browser.apply(Control::Turn(1), &ctx);
+        assert!(browser.footer_selected(&ctx));
+        let _ = browser.apply(Control::Turn(3), &ctx);
+        assert!(browser.footer_selected(&ctx));
+        assert_eq!(browser.apply(Control::Press, &ctx), Effect::None);
+        assert_eq!(browser.frame(&ctx).pinned.text, back("Tracks"));
+        assert!(!browser.footer_selected(&ctx));
+    }
+
+    #[test]
+    fn the_playing_line_opens_now_playing_from_settings() {
+        let libraries = state(vec![gig()]);
+        let settings = Settings::new();
+        let mut ctx = context(
+            &libraries,
+            &settings,
+            PlaySnap {
+                loaded: true,
+                running: true,
+                ended: false,
+            },
+        );
+        ctx.status = "Paused · Artist – One · 1:00 / 4:00";
+        let mut browser = Browser::new(1.0, &libraries);
+        press_pinned(&mut browser, &ctx);
+        assert_eq!(browser.frame(&ctx).pinned.text, back("USB"));
+        let count = browser.frame(&ctx).items.len();
+        let _ = browser.apply(Control::Turn(i32::try_from(count + 1).unwrap()), &ctx);
+        assert!(browser.footer_selected(&ctx));
+        let _ = browser.apply(Control::Press, &ctx);
+        assert_eq!(browser.frame(&ctx).pinned.text, back("USB"));
+        assert_eq!(browser.frame(&ctx).items[0].text, "Pause");
+    }
+
+    #[test]
+    fn a_level_screen_keeps_the_playing_line_as_information() {
+        let libraries = state(Vec::new());
+        let settings = Settings::new();
+        let mut ctx = context(
+            &libraries,
+            &settings,
+            PlaySnap {
+                loaded: true,
+                running: true,
+                ended: false,
+            },
+        );
+        ctx.status = "Playing · Artist – One · 0:01 / 3:00";
+        let mut browser = Browser::new(1.0, &libraries);
+        press_text(&mut browser, &ctx, "Now playing");
+        press_text(&mut browser, &ctx, "Volume");
+        assert_eq!(browser.cursor(), 0);
+        let effect = browser.apply(Control::Turn(-1), &ctx);
+        assert!(matches!(effect, Effect::Volume(_)));
+        assert_eq!(browser.cursor(), 0);
+        assert!(!browser.footer_selected(&ctx));
+    }
+
+    #[test]
     fn now_playing_is_a_row_on_the_usb_list_once_a_queue_is_loaded() {
         let libraries = state(vec![gig()]);
         let settings = Settings::new();
@@ -1488,7 +1665,10 @@ mod tests {
         assert!(matches!(browser.frame(&ctx).mast, Mast::Waveform));
         press_pinned(&mut browser, &ctx);
         press_text(&mut browser, &ctx, "Equalizer");
-        assert!(matches!(browser.frame(&ctx).mast, Mast::Equalizer));
+        assert!(matches!(
+            browser.frame(&ctx).mast,
+            Mast::Equalizer(crate::visualizer::EqualizerTheme::Mirror)
+        ));
         press_pinned(&mut browser, &ctx);
         press_text(&mut browser, &ctx, "Deck");
         assert!(matches!(browser.frame(&ctx).mast, Mast::Deck));
@@ -1527,19 +1707,48 @@ mod tests {
     }
 
     #[test]
-    fn milkdrop_lists_packs_and_opens_full_screen() {
+    fn the_only_preset_pack_opens_immediately() {
         let libraries = state(vec![gig()]);
         let settings = Settings::new();
         let mut browser = Browser::new(settings.volume_limit(), &libraries);
         let packs = [Pack {
-            name: "Cream".to_string(),
-            path: PathBuf::from("cream"),
+            name: "Built-in".to_string(),
+            path: PathBuf::from("built-in"),
         }];
         let mut ctx = context(&libraries, &settings, playing());
         ctx.packs = &packs;
         open_visualizers(&mut browser, &ctx);
         press_text(&mut browser, &ctx, "MilkDrop");
-        assert_eq!(browser.frame(&ctx).items[0].text, "Cream");
+        assert_eq!(
+            browser.frame(&ctx).mast,
+            Mast::MilkDrop(PathBuf::from("built-in"))
+        );
+        assert_eq!(browser.frame(&ctx).pinned.text, back("MilkDrop"));
+        press_pinned(&mut browser, &ctx);
+        assert_eq!(browser.frame(&ctx).items[0].text, "Built-in");
+    }
+
+    #[test]
+    fn milkdrop_lists_packs_and_opens_full_screen() {
+        let libraries = state(vec![gig()]);
+        let settings = Settings::new();
+        let mut browser = Browser::new(settings.volume_limit(), &libraries);
+        let packs = [
+            Pack {
+                name: "Built-in".to_string(),
+                path: PathBuf::from("built-in"),
+            },
+            Pack {
+                name: "Cream".to_string(),
+                path: PathBuf::from("cream"),
+            },
+        ];
+        let mut ctx = context(&libraries, &settings, playing());
+        ctx.packs = &packs;
+        open_visualizers(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "MilkDrop");
+        assert_eq!(browser.frame(&ctx).items[0].text, "Built-in");
+        assert_eq!(browser.frame(&ctx).items[1].text, "Cream");
         assert_eq!(browser.frame(&ctx).caption.as_deref(), Some("Preset pack"));
         press_text(&mut browser, &ctx, "Cream");
         assert_eq!(
@@ -1547,9 +1756,77 @@ mod tests {
             Mast::MilkDrop(PathBuf::from("cream"))
         );
         assert_eq!(browser.frame(&ctx).pinned.text, back("MilkDrop"));
-        assert!(browser.frame(&ctx).items.is_empty());
+        assert_eq!(browser.frame(&ctx).items[0].text, "Full screen");
+        assert_eq!(browser.frame(&ctx).items.len(), 1);
         press_pinned(&mut browser, &ctx);
-        assert_eq!(browser.frame(&ctx).items[0].text, "Cream");
+        assert_eq!(browser.frame(&ctx).items[0].text, "Built-in");
+        assert_eq!(browser.frame(&ctx).items[1].text, "Cream");
+    }
+
+    #[test]
+    fn full_screen_hides_the_menu_until_the_platter_moves() {
+        let libraries = state(vec![gig()]);
+        let settings = Settings::new();
+        let mut browser = Browser::new(settings.volume_limit(), &libraries);
+        let ctx = context(&libraries, &settings, playing());
+        open_visualizers(&mut browser, &ctx);
+        for label in ["Waveform", "Equalizer", "Deck"] {
+            press_text(&mut browser, &ctx, label);
+            assert_eq!(browser.frame(&ctx).items[0].text, "Full screen");
+            assert!(!browser.frame(&ctx).fullscreen);
+            press_text(&mut browser, &ctx, "Full screen");
+            assert!(browser.frame(&ctx).fullscreen);
+            let _ = browser.apply(Control::Press, &ctx);
+            assert!(browser.frame(&ctx).fullscreen);
+            let cursor = browser.cursor();
+            let _ = browser.apply(Control::Turn(4), &ctx);
+            assert!(!browser.frame(&ctx).fullscreen);
+            assert_eq!(browser.cursor(), cursor);
+            press_pinned(&mut browser, &ctx);
+        }
+    }
+
+    #[test]
+    fn the_equalizer_theme_cycles_from_its_row() {
+        use crate::visualizer::EqualizerTheme;
+
+        let libraries = state(vec![gig()]);
+        let settings = Settings::new();
+        let mut browser = Browser::new(settings.volume_limit(), &libraries);
+        let ctx = context(&libraries, &settings, playing());
+        open_visualizers(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "Waveform");
+        assert!(browser
+            .frame(&ctx)
+            .items
+            .iter()
+            .all(|item| item.text != "Theme"));
+        press_pinned(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "Equalizer");
+        assert_eq!(browser.frame(&ctx).items[1].text, "Theme");
+        assert_eq!(
+            browser.frame(&ctx).items[1].detail.as_deref(),
+            Some("Mirror")
+        );
+        for theme in [
+            EqualizerTheme::Led,
+            EqualizerTheme::Fire,
+            EqualizerTheme::Mirror,
+        ] {
+            press_text(&mut browser, &ctx, "Theme");
+            assert_eq!(
+                browser.frame(&ctx).items[1].detail.as_deref(),
+                Some(theme.label())
+            );
+            assert_eq!(browser.frame(&ctx).mast, Mast::Equalizer(theme));
+        }
+        press_pinned(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "Deck");
+        assert!(browser
+            .frame(&ctx)
+            .items
+            .iter()
+            .all(|item| item.text != "Theme"));
     }
 
     #[test]
@@ -1581,7 +1858,6 @@ mod tests {
         ctx.packs = &packs;
         open_visualizers(&mut browser, &ctx);
         press_text(&mut browser, &ctx, "MilkDrop");
-        press_text(&mut browser, &ctx, "Cream");
         ctx.packs = &[];
         browser.refresh(&ctx);
         let frame = browser.frame(&ctx);

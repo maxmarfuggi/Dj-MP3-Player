@@ -4,6 +4,8 @@
 //! row; faster detents move two, four, or eight rows. The round key, and
 //! Enter during development, press the highlighted row. The pinned row is
 //! one detent above the first item and stays on screen while the list scrolls.
+//! When a screen offers the playing line, it is one detent below the last
+//! item and stays at the bottom of the screen.
 //!
 //! On the Pi, CLK is GPIO 17, DT is GPIO 27, and the round key is GPIO 25,
 //! wired to ground. The encoder's own shaft switch is left unwired.
@@ -319,17 +321,33 @@ impl Highlight {
         self.index
     }
 
-    pub fn move_by(&mut self, steps: i32, item_count: usize, visible_items: usize) {
-        self.index = moved_index(self.index, steps, item_count);
+    /// `footer` adds one stop after the last item. That stop is not one of
+    /// the scrolling rows; the screen draws it under the list.
+    pub fn move_by(
+        &mut self,
+        steps: i32,
+        item_count: usize,
+        visible_items: usize,
+        footer: bool,
+    ) {
+        let last = item_count + usize::from(footer);
+        self.index = moved_index(self.index, steps, last);
         self.reveal(item_count, visible_items);
     }
 
     /// Keeps the highlight inside a list that shrank.
-    pub fn fit(&mut self, item_count: usize, visible_items: usize) {
-        if self.index > item_count {
-            self.index = item_count;
+    pub fn fit(&mut self, item_count: usize, visible_items: usize, footer: bool) {
+        let last = item_count + usize::from(footer);
+        if self.index > last {
+            self.index = last;
         }
         self.reveal(item_count, visible_items);
+    }
+
+    /// The highlight is on the playing line under the list.
+    #[must_use]
+    pub fn on_footer(self, item_count: usize) -> bool {
+        self.index == item_count + 1
     }
 
     fn reveal(&mut self, item_count: usize, visible_items: usize) {
@@ -338,13 +356,15 @@ impl Highlight {
             return;
         }
         let visible = visible_items.max(1);
-        if self.index >= 1 {
+        if (1..=item_count).contains(&self.index) {
             let item = self.index - 1;
             if item < self.scroll {
                 self.scroll = item;
             } else if item >= self.scroll.saturating_add(visible) {
                 self.scroll = item + 1 - visible;
             }
+        } else if self.index > item_count {
+            self.scroll = item_count.saturating_sub(visible);
         }
         let max_scroll = item_count.saturating_sub(visible);
         self.scroll = self.scroll.min(max_scroll);
@@ -390,10 +410,11 @@ pub fn apply_control(
     control: Control,
     item_count: usize,
     visible_items: usize,
+    footer: bool,
 ) -> Applied {
     match control {
         Control::Turn(steps) => {
-            highlight.move_by(steps, item_count, visible_items);
+            highlight.move_by(steps, item_count, visible_items, footer);
             Applied::Moved(highlight.index())
         }
         Control::Press => Applied::Pressed(highlight.index()),
@@ -559,7 +580,7 @@ mod tests {
     fn one_detent_up_from_the_first_item_lands_on_the_pinned_row() {
         let mut highlight = Highlight::new(5);
         assert_eq!(highlight.index(), 1);
-        highlight.move_by(-1, 5, 8);
+        highlight.move_by(-1, 5, 8, false);
         assert_eq!(highlight.index(), 0);
         assert_eq!(highlight.rows(5, 8)[0], Row::Pinned { selected: true });
     }
@@ -567,25 +588,25 @@ mod tests {
     #[test]
     fn one_detent_down_from_the_pinned_row_lands_on_the_first_item() {
         let mut highlight = Highlight::new(5);
-        highlight.move_by(-1, 5, 8);
+        highlight.move_by(-1, 5, 8, false);
         assert_eq!(highlight.index(), 0);
-        highlight.move_by(1, 5, 8);
+        highlight.move_by(1, 5, 8, false);
         assert_eq!(highlight.index(), 1);
     }
 
     #[test]
     fn the_highlight_stops_at_the_ends() {
         let mut highlight = Highlight::new(3);
-        highlight.move_by(-5, 3, 8);
+        highlight.move_by(-5, 3, 8, false);
         assert_eq!(highlight.index(), 0);
-        highlight.move_by(20, 3, 8);
+        highlight.move_by(20, 3, 8, false);
         assert_eq!(highlight.index(), 3);
     }
 
     #[test]
     fn the_pinned_row_stays_put_while_the_list_scrolls() {
         let mut highlight = Highlight::new(30);
-        highlight.move_by(12, 30, 8);
+        highlight.move_by(12, 30, 8, false);
         let rows = highlight.rows(30, 8);
         assert_eq!(rows[0], Row::Pinned { selected: false });
         assert!(rows
@@ -595,11 +616,40 @@ mod tests {
     }
 
     #[test]
+    fn the_playing_line_is_one_stop_past_the_last_item() {
+        let mut highlight = Highlight::new(30);
+        highlight.move_by(29, 30, 8, true);
+        assert_eq!(highlight.index(), 30);
+        highlight.move_by(1, 30, 8, true);
+        assert!(highlight.on_footer(30));
+        highlight.move_by(4, 30, 8, true);
+        assert!(highlight.on_footer(30));
+        let rows = highlight.rows(30, 8);
+        assert_eq!(rows[0], Row::Pinned { selected: false });
+        assert!(rows.iter().all(|row| match row {
+            Row::Item { selected, .. } => !selected,
+            Row::Pinned { selected } => !selected,
+        }));
+        assert_eq!(
+            rows.last(),
+            Some(&Row::Item {
+                index: 29,
+                selected: false,
+            })
+        );
+        highlight.move_by(-1, 30, 8, true);
+        assert_eq!(highlight.index(), 30);
+        highlight.fit(30, 8, false);
+        assert_eq!(highlight.index(), 30);
+        assert!(!highlight.on_footer(30));
+    }
+
+    #[test]
     fn a_shrinking_list_keeps_the_highlight_in_range() {
         let mut highlight = Highlight::new(10);
-        highlight.move_by(8, 10, 8);
+        highlight.move_by(8, 10, 8, false);
         assert_eq!(highlight.index(), 9);
-        highlight.fit(2, 8);
+        highlight.fit(2, 8, false);
         assert_eq!(highlight.index(), 2);
         assert_eq!(
             highlight.rows(2, 8),
@@ -700,17 +750,17 @@ mod tests {
         let mut highlight = Highlight::new(30);
         let first = input.key(DevKey::Down, ms(0)).unwrap();
         assert_eq!(
-            apply_control(&mut highlight, first, 30, 8),
+            apply_control(&mut highlight, first, 30, 8, false),
             Applied::Moved(2)
         );
         let fast = input.key(DevKey::Down, ms(10)).unwrap();
         assert_eq!(
-            apply_control(&mut highlight, fast, 30, 8),
+            apply_control(&mut highlight, fast, 30, 8, false),
             Applied::Moved(10)
         );
         let press = input.key(DevKey::Press, ms(10)).unwrap();
         assert_eq!(
-            apply_control(&mut highlight, press, 30, 8),
+            apply_control(&mut highlight, press, 30, 8, false),
             Applied::Pressed(10)
         );
     }

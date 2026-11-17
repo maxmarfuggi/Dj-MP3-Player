@@ -10,3 +10,5 @@ crates/djusb-node/.napi-rs-filesystem-transaction*
 *.log
 # Copies of real USBs hold personal track and playlist names.
 fixtures/local/
+# The projectM shared library, downloaded for local runs. LGPL, not source.
+apps/device/projectm/

@@ -35,15 +35,28 @@ const READOUT: f32 = 112.0;
 const COVER: f32 = 200.0;
 
 /// The panel: a lit edge, the screen, and the status line.
+///
+/// `footer_selected` inverts the playing line, the same way a menu row
+/// inverts when the platter lands on it.
 pub fn screen<Message: 'static>(
     frame: Frame,
     shown: Vec<Row>,
     header: Option<NowHeader>,
     status: String,
+    footer_selected: bool,
     scope: Arc<Scope>,
     playhead: Playhead,
     deck_track: DeckTrack,
 ) -> Element<'static, Message> {
+    if frame.fullscreen {
+        if let Some(picture) = live_visual(&frame.mast, &scope, &playhead, &deck_track) {
+            return container(picture)
+                .width(Fill)
+                .height(Fill)
+                .style(|_| container::Style::default().background(BACKGROUND))
+                .into();
+        }
+    }
     let mut rows = Vec::new();
     if matches!(frame.mast, Mast::NowPlaying) {
         rows.push(now_block(header));
@@ -53,6 +66,7 @@ pub fn screen<Message: 'static>(
         caption,
         items,
         mast,
+        fullscreen: _,
     } = frame;
     for entry in shown {
         match entry {
@@ -64,11 +78,12 @@ pub fn screen<Message: 'static>(
                 match &mast {
                     Mast::Level(readout) => rows.push(level_block(readout.clone())),
                     Mast::Notice(lines) => rows.push(notice_block(lines.clone())),
-                    Mast::Waveform => rows.push(waveform(Arc::clone(&scope))),
-                    Mast::Equalizer => rows.push(equalizer(Arc::clone(&scope))),
-                    Mast::Deck => rows.push(deck(playhead.clone(), deck_track.clone())),
-                    Mast::MilkDrop(path) => rows.push(milkdrop(Arc::clone(&scope), path.clone())),
-                    Mast::NowPlaying | Mast::None => {}
+                    Mast::Waveform
+                    | Mast::Equalizer(_)
+                    | Mast::Deck
+                    | Mast::MilkDrop(_)
+                    | Mast::NowPlaying
+                    | Mast::None => {}
                 }
             }
             Row::Item { index, selected } => {
@@ -77,6 +92,9 @@ pub fn screen<Message: 'static>(
                 }
             }
         }
+    }
+    if let Some(picture) = live_visual(&mast, &scope, &playhead, &deck_track) {
+        rows.push(picture);
     }
 
     let menu = column(rows).spacing(space::SM).width(Fill).height(Fill);
@@ -87,7 +105,7 @@ pub fn screen<Message: 'static>(
     )
     .is_some()
     {
-        stack.push(status_line(status));
+        stack.push(status_line(status, footer_selected));
     }
     container(column(stack).spacing(space::LG).width(Fill).height(Fill))
         .padding(space::XXL)
@@ -95,6 +113,22 @@ pub fn screen<Message: 'static>(
         .height(Fill)
         .style(|_| container::Style::default().background(BACKGROUND))
         .into()
+}
+
+/// The picture under the menu, or the whole screen while it is hidden.
+fn live_visual<Message: 'static>(
+    mast: &Mast,
+    scope: &Arc<Scope>,
+    playhead: &Playhead,
+    deck_track: &DeckTrack,
+) -> Option<Element<'static, Message>> {
+    Some(match mast {
+        Mast::Waveform => waveform(Arc::clone(scope)),
+        Mast::Equalizer(theme) => equalizer(Arc::clone(scope), *theme),
+        Mast::Deck => deck(playhead.clone(), deck_track.clone()),
+        Mast::MilkDrop(path) => milkdrop(Arc::clone(scope), path.clone()),
+        Mast::NowPlaying | Mast::None | Mast::Level(_) | Mast::Notice(_) => return None,
+    })
 }
 
 fn rule<Message: 'static>() -> Element<'static, Message> {
@@ -264,13 +298,36 @@ fn footer(status: &str, now_playing: bool) -> Option<&str> {
     }
 }
 
-fn status_line<Message: 'static>(status: String) -> Element<'static, Message> {
-    let color = if is_problem(&status) { ALERT } else { DIM };
-    text(status)
+fn status_line<Message: 'static>(status: String, selected: bool) -> Element<'static, Message> {
+    let problem = is_problem(&status);
+    let ink = if selected {
+        BACKGROUND
+    } else if problem {
+        ALERT
+    } else {
+        DIM
+    };
+    let body = text(status)
         .font(FACE)
         .size(font::size::WALL_DETAIL)
-        .color(color)
-        .wrapping(Wrapping::Word)
+        .color(ink)
+        .wrapping(Wrapping::Word);
+    container(body)
+        .padding(Padding {
+            top: space::ROW,
+            bottom: space::ROW,
+            left: space::LG,
+            right: space::LG,
+        })
+        .width(Fill)
+        .style(move |_theme| {
+            if selected {
+                let fill = if problem { ALERT } else { FOREGROUND };
+                container::Style::default().background(fill)
+            } else {
+                container::Style::default()
+            }
+        })
         .into()
 }
 

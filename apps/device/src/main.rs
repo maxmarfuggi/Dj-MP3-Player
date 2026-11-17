@@ -16,6 +16,7 @@ mod input;
 )]
 mod playback;
 mod playing;
+mod presets;
 mod screens;
 #[cfg(test)]
 mod token_gen;
@@ -56,14 +57,17 @@ fn place_on_screen(window: Size, monitor: Size) -> Point {
 }
 
 /// Directories that hold preset packs: the override, beside settings, and
-/// beside the player.
+/// beside the player. The pack that ships with the player is written beside
+/// settings before the scan.
 fn preset_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Some(dir) = std::env::var_os("DJUSB_PRESETS") {
         roots.push(PathBuf::from(dir));
     }
     if let Some(dir) = settings_path().parent() {
-        roots.push(dir.join("presets"));
+        let presets = dir.join("presets");
+        presets::install_builtin(&presets);
+        roots.push(presets);
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
@@ -157,11 +161,13 @@ impl App {
                 self.state = self.libraries.state();
                 self.packs = discover_packs(&preset_roots());
                 let play = self.play_snap();
+                let status = self.status_text();
                 self.browser.refresh(&Ctx {
                     state: &self.state,
                     settings: &self.settings,
                     play,
                     packs: &self.packs,
+                    status: &status,
                 });
             }
             Message::Tick => self.status = self.player.status(),
@@ -182,6 +188,7 @@ impl App {
 
     fn follow(&mut self, control: input::Control) {
         let play = self.play_snap();
+        let status = self.status_text();
         let effect = self.browser.apply(
             control,
             &Ctx {
@@ -189,6 +196,7 @@ impl App {
                 settings: &self.settings,
                 play,
                 packs: &self.packs,
+                status: &status,
             },
         );
         self.perform(effect);
@@ -225,11 +233,13 @@ impl App {
             } => {
                 if self.load_cue(&library_id, playlist_id.as_deref(), index) {
                     let play = self.play_snap();
+                    let status = self.status_text();
                     self.browser.confirm_play(&Ctx {
                         state: &self.state,
                         settings: &self.settings,
                         play,
                         packs: &self.packs,
+                        status: &status,
                     });
                 }
             }
@@ -279,6 +289,13 @@ impl App {
         true
     }
 
+    fn status_text(&self) -> String {
+        self.playing
+            .as_ref()
+            .and_then(|playing| status_line(&self.status, &playing.titles))
+            .unwrap_or_default()
+    }
+
     fn play_snap(&self) -> PlaySnap {
         PlaySnap {
             loaded: self.playing.is_some(),
@@ -301,6 +318,7 @@ impl App {
             key: playing.keys.get(index).cloned().unwrap_or_default(),
             bpm: playing.bpms.get(index).copied().flatten(),
             path: playing.paths.get(index).cloned(),
+            number: Some(index + 1),
         }
     }
 
@@ -316,28 +334,27 @@ impl App {
 
     fn view(&self) -> Element<'_, Message> {
         let play = self.play_snap();
+        let status = self.status_text();
         let ctx = Ctx {
             state: &self.state,
             settings: &self.settings,
             play,
             packs: &self.packs,
+            status: &status,
         };
         let frame = self.browser.frame(&ctx);
         let shown = self.browser.shown(&ctx);
+        let footer_selected = self.browser.footer_selected(&ctx);
         let header = self
             .playing
             .as_ref()
             .and_then(|playing| now_header(&self.status, playing));
-        let status = self
-            .playing
-            .as_ref()
-            .and_then(|playing| status_line(&self.status, &playing.titles))
-            .unwrap_or_default();
         chrome::screen(
             frame,
             shown,
             header,
             status,
+            footer_selected,
             self.player.scope(),
             self.player.playhead(),
             self.deck_track(),

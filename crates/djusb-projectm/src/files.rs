@@ -108,12 +108,41 @@ pub fn locate_library(dirs: &[PathBuf]) -> Result<PathBuf, String> {
 }
 
 pub(crate) fn open_library(path: &Path) -> Result<Library, String> {
+    // projectM-4.dll pulls in glew32.dll from the same folder. Windows looks
+    // beside the program, not beside the library, unless that folder is added.
+    allow_sibling_libraries(path);
     unsafe { Library::new(path) }.map_err(|error| {
         format!(
             "projectM could not be loaded from {}: {error}",
             path.display()
         )
     })
+}
+
+fn allow_sibling_libraries(path: &Path) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+
+        let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) else {
+            return;
+        };
+        let mut wide: Vec<u16> = dir.as_os_str().encode_wide().collect();
+        wide.push(0);
+        unsafe {
+            let _ = SetDllDirectoryW(wide.as_ptr());
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+    }
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn SetDllDirectoryW(path: *const u16) -> i32;
 }
 
 fn remember(found: &mut Vec<PathBuf>, seen: &mut BTreeSet<PathBuf>, path: &Path) {
