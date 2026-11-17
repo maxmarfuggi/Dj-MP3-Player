@@ -11,10 +11,10 @@
 //! or Bluetooth speaker is whichever PipeWire has chosen. When the output is
 //! lost the engine reopens it and carries on from the position last heard.
 //!
-//! "Previous", the end of the queue, and a track that fails follow
-//! [`djusb_core::Playback`]: previous restarts the track after three seconds,
-//! and a failed track is skipped. Reordering a queue keeps the current entry,
-//! which [`djusb_core::Playback::reorder`] decides.
+//! "Previous" and a track that fails follow [`djusb_core::Playback`]: previous
+//! restarts the track after three seconds, and a failed track is skipped.
+//! [`djusb_core::Playback::reorder`] keeps the current entry when the queue
+//! order changes.
 
 mod convert;
 mod decode;
