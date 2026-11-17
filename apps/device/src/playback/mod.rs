@@ -17,7 +17,7 @@
 //! order changes.
 
 mod convert;
-mod decode;
+pub(crate) mod decode;
 mod engine;
 mod output;
 mod scope;
@@ -162,6 +162,15 @@ impl Player {
         Arc::clone(&self.shared.scope)
     }
 
+    /// A playhead that reads the atomics directly, so a canvas can follow the
+    /// music between status ticks.
+    #[must_use]
+    pub fn playhead(&self) -> Playhead {
+        Playhead {
+            shared: Arc::clone(&self.shared),
+        }
+    }
+
     fn send(&self, command: Command) {
         if self.commands.send(command).is_err() {
             eprintln!("Playback has stopped.");
@@ -174,6 +183,36 @@ impl Drop for Player {
         let _ = self.commands.send(Command::Quit);
         if let Some(engine) = self.engine.take() {
             let _ = engine.join();
+        }
+    }
+}
+
+/// Where the track is, without the problem list the status locks.
+#[derive(Clone)]
+pub struct Playhead {
+    shared: Arc<Shared>,
+}
+
+/// One reading of the playhead, in seconds.
+#[derive(Debug, Clone, Copy)]
+pub struct Moment {
+    /// Seconds into the file.
+    pub position: f64,
+    /// Seconds in the file, when it is known.
+    pub length: Option<f64>,
+    pub paused: bool,
+}
+
+impl Playhead {
+    #[must_use]
+    pub fn moment(&self) -> Moment {
+        let rate = self.shared.output_rate.load(Ordering::Acquire).max(1);
+        let length = self.shared.length.load(Ordering::Acquire);
+        let frames = |count: u64| count as f64 / f64::from(rate);
+        Moment {
+            position: frames(self.shared.position.load(Ordering::Acquire)),
+            length: (length > 0).then(|| frames(length)),
+            paused: self.shared.paused.load(Ordering::Acquire),
         }
     }
 }

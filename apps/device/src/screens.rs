@@ -5,8 +5,13 @@
 //! screen is the exception the controls describe: the platter changes the
 //! value, and the pinned row is what leaves, keeping the value.
 
+use std::path::PathBuf;
+
 use djusb_core::logic::{find_playlist, format_bpm, format_time, list_entries, order_key};
-use djusb_core::{Library, LibraryState, PlaylistKind, PlaylistNode, Settings, Track};
+use djusb_core::{
+    settings_path, Library, LibraryState, PlaylistKind, PlaylistNode, Settings, Track,
+};
+use djusb_projectm::{licence_lines, Pack};
 
 use crate::home::{home_lines, source_label, tracks_label, volume_name, HomeLine, EMPTY_HOME};
 use crate::input::{Control, Highlight, Row};
@@ -33,6 +38,7 @@ pub struct Ctx<'a> {
     pub state: &'a LibraryState,
     pub settings: &'a Settings,
     pub play: PlaySnap,
+    pub packs: &'a [Pack],
 }
 
 /// Enough of the player to label Play and Pause and to offer Now playing.
@@ -91,6 +97,14 @@ pub enum Mast {
     NowPlaying,
     Level(Readout),
     Notice(Vec<String>),
+    /// The oscilloscope, drawn by the window from the audio copy.
+    Waveform,
+    /// The spectrum, drawn by the window from the audio copy.
+    Equalizer,
+    /// The CDJ deck: title, key, time, tempo, and the file's waveform.
+    Deck,
+    /// Full-screen MilkDrop for one preset pack, drawn by the window.
+    MilkDrop(PathBuf),
 }
 
 /// A big percentage and a meter, for volume and the volume limit.
@@ -136,11 +150,17 @@ enum Place {
     Volume,
     Visualizers,
     Visualizer(Vis),
+    /// MilkDrop, showing one preset pack.
+    Milk {
+        path: PathBuf,
+    },
     Settings,
     Bluetooth,
     VolumeLimit,
     About,
     Licences,
+    /// The projectM notice and the written source offer.
+    ProjectM,
 }
 
 /// The list now playing returns to.
@@ -155,7 +175,7 @@ struct Origin {
 enum Vis {
     Waveform,
     Equalizer,
-    Turntable,
+    Deck,
     MilkDrop,
 }
 
@@ -164,23 +184,8 @@ impl Vis {
         match self {
             Self::Waveform => "Waveform",
             Self::Equalizer => "Equalizer",
-            Self::Turntable => "Turntable",
+            Self::Deck => "Deck",
             Self::MilkDrop => "MilkDrop",
-        }
-    }
-
-    fn notice(self) -> &'static [&'static str] {
-        match self {
-            Self::Waveform => &["Waveform", "Drawn from the audio in a later piece."],
-            Self::Equalizer => &["Equalizer", "Drawn from the audio in a later piece."],
-            Self::Turntable => &[
-                "Turntable",
-                "The record and the tonearm are drawn in a later piece.",
-            ],
-            Self::MilkDrop => &[
-                "MilkDrop",
-                "Full-screen MilkDrop is added in a later piece.",
-            ],
         }
     }
 }
@@ -207,6 +212,8 @@ enum Act {
     VolumeLimit,
     About,
     Licences,
+    Pack(PathBuf),
+    ProjectM,
 }
 
 impl Choice {
@@ -265,7 +272,7 @@ impl Browser {
             pinned: line(self.pinned_text(ctx), None, Tone::Text),
             caption: self.caption(ctx),
             items: choices.into_iter().map(|choice| choice.line).collect(),
-            mast: self.mast(),
+            mast: self.mast(ctx),
         }
     }
 
@@ -403,10 +410,12 @@ impl Browser {
             Place::NowPlaying => self.back_from_now(ctx),
             Place::Volume | Place::Visualizers => self.go(Place::NowPlaying, ctx),
             Place::Visualizer(_) => self.go(Place::Visualizers, ctx),
+            Place::Milk { .. } => self.go(Place::Visualizer(Vis::MilkDrop), ctx),
             Place::Settings => self.go(Place::Home, ctx),
             Place::Bluetooth | Place::VolumeLimit | Place::About | Place::Licences => {
-                self.go(Place::Settings, ctx);
+                self.go(Place::Settings, ctx)
             }
+            Place::ProjectM => self.go(Place::Licences, ctx),
         }
     }
 
@@ -519,6 +528,14 @@ impl Browser {
                 self.go(Place::Licences, ctx);
                 Effect::None
             }
+            Act::Pack(path) => {
+                self.go(Place::Milk { path }, ctx);
+                Effect::None
+            }
+            Act::ProjectM => {
+                self.go(Place::ProjectM, ctx);
+                Effect::None
+            }
         }
     }
 
@@ -558,6 +575,9 @@ impl Browser {
                     parent: valid_path(library, &parent),
                 };
             }
+            Place::Milk { path } if !ctx.packs.iter().any(|pack| pack.path == path) => {
+                self.place = Place::Visualizer(Vis::MilkDrop);
+            }
             _ => {}
         }
         if let Some(origin) = &self.origin {
@@ -578,13 +598,16 @@ impl Browser {
             } => track_choices(ctx, library_id, playlist_id.as_deref()),
             Place::NowPlaying => self.transport_choices(ctx),
             Place::Visualizers => visualizer_choices(),
+            Place::Visualizer(Vis::MilkDrop) => milk_choices(ctx.packs),
             Place::Settings => self.settings_choices(),
             Place::Licences => licence_choices(),
             Place::Volume
             | Place::VolumeLimit
             | Place::Visualizer(_)
+            | Place::Milk { .. }
             | Place::Bluetooth
-            | Place::About => Vec::new(),
+            | Place::About
+            | Place::ProjectM => Vec::new(),
         }
     }
 
@@ -634,10 +657,12 @@ impl Browser {
             }
             Place::Volume | Place::Visualizers => back("Now playing"),
             Place::Visualizer(_) => back("Visualizer"),
+            Place::Milk { .. } => back("MilkDrop"),
             Place::Settings => back("USB"),
             Place::Bluetooth | Place::VolumeLimit | Place::About | Place::Licences => {
                 back("Settings")
             }
+            Place::ProjectM => back("Licences"),
         }
     }
 
@@ -659,19 +684,29 @@ impl Browser {
                 Some(format!("Limit {}", percent_label(self.limit)))
             }
             Place::VolumeLimit => Some("Loudest the player will go".to_string()),
+            Place::Visualizer(Vis::MilkDrop) if !ctx.packs.is_empty() => {
+                Some("Preset pack".to_string())
+            }
             _ => None,
         }
     }
 
-    fn mast(&self) -> Mast {
-        match self.place {
+    fn mast(&self, ctx: &Ctx<'_>) -> Mast {
+        match &self.place {
             Place::NowPlaying => Mast::NowPlaying,
             Place::Volume => Mast::Level(readout(self.volume)),
             Place::VolumeLimit => Mast::Level(readout(self.limit)),
             Place::About => Mast::Notice(about_lines()),
             Place::Bluetooth => Mast::Notice(bluetooth_lines()),
-            Place::Visualizer(mode) => Mast::Notice(
-                mode.notice()
+            Place::Visualizer(Vis::Waveform) => Mast::Waveform,
+            Place::Visualizer(Vis::Equalizer) => Mast::Equalizer,
+            Place::Visualizer(Vis::Deck) => Mast::Deck,
+            Place::Visualizer(Vis::MilkDrop) if ctx.packs.is_empty() => {
+                Mast::Notice(no_pack_lines())
+            }
+            Place::Milk { path } => Mast::MilkDrop(path.clone()),
+            Place::ProjectM => Mast::Notice(
+                licence_lines()
                     .iter()
                     .map(|line| (*line).to_string())
                     .collect(),
@@ -808,10 +843,33 @@ fn track_detail(track: &Track) -> Option<String> {
 }
 
 fn visualizer_choices() -> Vec<Choice> {
-    [Vis::Waveform, Vis::Equalizer, Vis::Turntable, Vis::MilkDrop]
+    [Vis::Waveform, Vis::Equalizer, Vis::Deck, Vis::MilkDrop]
         .into_iter()
         .map(|mode| Choice::act(mode.label(), None, Act::Mode(mode)))
         .collect()
+}
+
+fn milk_choices(packs: &[Pack]) -> Vec<Choice> {
+    if packs.is_empty() {
+        return vec![Choice::dead("No preset packs", Tone::Dim)];
+    }
+    packs
+        .iter()
+        .map(|pack| Choice::act(pack.name.clone(), None, Act::Pack(pack.path.clone())))
+        .collect()
+}
+
+fn no_pack_lines() -> Vec<String> {
+    let directory = settings_path()
+        .parent()
+        .map(|dir| dir.join("presets"))
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "presets".to_string());
+    vec![
+        "MilkDrop".to_string(),
+        "Add a folder of .milk presets.".to_string(),
+        directory,
+    ]
 }
 
 fn licence_choices() -> Vec<Choice> {
@@ -821,6 +879,7 @@ fn licence_choices() -> Vec<Choice> {
         ("cpal", "Apache-2.0"),
         ("rubato", "MIT or Apache-2.0"),
         ("rtrb", "MIT or Apache-2.0"),
+        ("rustfft", "MIT or Apache-2.0"),
         ("rusqlite", "MIT"),
         ("SQLCipher", "BSD"),
         ("gpiocdev", "Apache-2.0 or MIT"),
@@ -830,6 +889,11 @@ fn licence_choices() -> Vec<Choice> {
         .into_iter()
         .map(|(name, licence)| Choice::act(name, Some(licence.to_string()), Act::Nothing))
         .collect::<Vec<_>>();
+    choices.push(Choice::act(
+        "projectM",
+        Some("LGPL-2.1".to_string()),
+        Act::ProjectM,
+    ));
     choices.push(Choice::dead(
         "The full list comes with the appliance image.",
         Tone::Dim,
@@ -1010,6 +1074,8 @@ mod tests {
         Library, LibraryLoadError, LibrarySource, LibraryState, PlaylistKind, PlaylistNode,
         Settings, Track,
     };
+    use djusb_projectm::Pack;
+    use std::path::PathBuf;
 
     fn track(id: &str, title: &str) -> Track {
         Track {
@@ -1088,6 +1154,7 @@ mod tests {
             state,
             settings,
             play,
+            packs: &[],
         }
     }
 
@@ -1417,6 +1484,15 @@ mod tests {
         press_text(&mut browser, &ctx, "Artist – Two");
         browser.confirm_play(&ctx);
         press_text(&mut browser, &ctx, "Visualizer");
+        press_text(&mut browser, &ctx, "Waveform");
+        assert!(matches!(browser.frame(&ctx).mast, Mast::Waveform));
+        press_pinned(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "Equalizer");
+        assert!(matches!(browser.frame(&ctx).mast, Mast::Equalizer));
+        press_pinned(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "Deck");
+        assert!(matches!(browser.frame(&ctx).mast, Mast::Deck));
+        press_pinned(&mut browser, &ctx);
         press_text(&mut browser, &ctx, "MilkDrop");
         assert_eq!(browser.frame(&ctx).pinned.text, back("Visualizer"));
         press_pinned(&mut browser, &ctx);
@@ -1431,5 +1507,106 @@ mod tests {
         assert_eq!(browser.frame(&ctx).pinned.text, back("USB"));
         press_pinned(&mut browser, &ctx);
         assert_eq!(browser.frame(&ctx).pinned.text, "Settings");
+    }
+
+    fn playing() -> PlaySnap {
+        PlaySnap {
+            loaded: true,
+            running: true,
+            ended: false,
+        }
+    }
+
+    fn open_visualizers(browser: &mut Browser, ctx: &Ctx<'_>) {
+        press_text(browser, ctx, "Device Library");
+        press_text(browser, ctx, "House");
+        press_text(browser, ctx, "Late");
+        press_text(browser, ctx, "Artist – Two");
+        browser.confirm_play(ctx);
+        press_text(browser, ctx, "Visualizer");
+    }
+
+    #[test]
+    fn milkdrop_lists_packs_and_opens_full_screen() {
+        let libraries = state(vec![gig()]);
+        let settings = Settings::new();
+        let mut browser = Browser::new(settings.volume_limit(), &libraries);
+        let packs = [Pack {
+            name: "Cream".to_string(),
+            path: PathBuf::from("cream"),
+        }];
+        let mut ctx = context(&libraries, &settings, playing());
+        ctx.packs = &packs;
+        open_visualizers(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "MilkDrop");
+        assert_eq!(browser.frame(&ctx).items[0].text, "Cream");
+        assert_eq!(browser.frame(&ctx).caption.as_deref(), Some("Preset pack"));
+        press_text(&mut browser, &ctx, "Cream");
+        assert_eq!(
+            browser.frame(&ctx).mast,
+            Mast::MilkDrop(PathBuf::from("cream"))
+        );
+        assert_eq!(browser.frame(&ctx).pinned.text, back("MilkDrop"));
+        assert!(browser.frame(&ctx).items.is_empty());
+        press_pinned(&mut browser, &ctx);
+        assert_eq!(browser.frame(&ctx).items[0].text, "Cream");
+    }
+
+    #[test]
+    fn milkdrop_with_no_packs_says_where_to_put_them() {
+        let libraries = state(vec![gig()]);
+        let settings = Settings::new();
+        let mut browser = Browser::new(settings.volume_limit(), &libraries);
+        let ctx = context(&libraries, &settings, playing());
+        open_visualizers(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "MilkDrop");
+        let frame = browser.frame(&ctx);
+        let Mast::Notice(lines) = &frame.mast else {
+            panic!("expected a notice");
+        };
+        assert!(lines.iter().any(|line| line.contains(".milk")));
+        assert_eq!(frame.items[0].text, "No preset packs");
+    }
+
+    #[test]
+    fn a_missing_pack_returns_to_the_list() {
+        let libraries = state(vec![gig()]);
+        let settings = Settings::new();
+        let mut browser = Browser::new(settings.volume_limit(), &libraries);
+        let packs = [Pack {
+            name: "Cream".to_string(),
+            path: PathBuf::from("cream"),
+        }];
+        let mut ctx = context(&libraries, &settings, playing());
+        ctx.packs = &packs;
+        open_visualizers(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "MilkDrop");
+        press_text(&mut browser, &ctx, "Cream");
+        ctx.packs = &[];
+        browser.refresh(&ctx);
+        let frame = browser.frame(&ctx);
+        assert!(matches!(frame.mast, Mast::Notice(_)));
+        assert_eq!(frame.pinned.text, back("Visualizer"));
+    }
+
+    #[test]
+    fn projectm_licence_leaves_through_licences() {
+        let libraries = state(vec![gig()]);
+        let settings = Settings::new();
+        let mut browser = Browser::new(settings.volume_limit(), &libraries);
+        let ctx = context(&libraries, &settings, PlaySnap::idle());
+        press_pinned(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "Licences");
+        press_text(&mut browser, &ctx, "projectM");
+        let frame = browser.frame(&ctx);
+        let Mast::Notice(lines) = &frame.mast else {
+            panic!("expected a notice");
+        };
+        let notice = lines.join("\n");
+        assert!(notice.contains("shared library"));
+        assert!(notice.contains("three years"));
+        assert_eq!(frame.pinned.text, back("Licences"));
+        press_pinned(&mut browser, &ctx);
+        assert_eq!(browser.frame(&ctx).pinned.text, back("Settings"));
     }
 }

@@ -12,7 +12,7 @@ mod home;
 mod input;
 #[allow(
     dead_code,
-    reason = "the visualizers use the audio copy the player keeps for them"
+    reason = "pause, seek and the queue stay on the player until the screens call them"
 )]
 mod playback;
 mod playing;
@@ -20,7 +20,9 @@ mod screens;
 #[cfg(test)]
 mod token_gen;
 mod tokens;
+mod visualizer;
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -28,17 +30,19 @@ use djusb_core::logic::{find_playlist, list_entries, order_key};
 use djusb_core::{
     settings_path, LibraryManager, LibraryState, ScanHandle, Settings, Volume, SCAN_INTERVAL,
 };
+use djusb_projectm::{discover_packs, Pack};
 use iced::theme::Palette;
 use iced::{Element, Point, Size, Subscription, Task, Theme};
 
 use playback::{Player, Status};
 use playing::{cue_from_entries, now_header, status_line, Playing};
 use screens::{Browser, Ctx, Effect, PlaySnap};
+use visualizer::DeckTrack;
 
 /// Raspberry Pi Touch Display 2, turned on its side. The panel's native
 /// pixels are 720×1280, and on the wall the long edge is horizontal.
-const PANEL_WIDTH: f32 = 1280.0;
-const PANEL_HEIGHT: f32 = 720.0;
+pub(crate) const PANEL_WIDTH: f32 = 1280.0;
+pub(crate) const PANEL_HEIGHT: f32 = 720.0;
 
 /// How often the status line follows the player.
 const STATUS_INTERVAL: Duration = Duration::from_millis(250);
@@ -49,6 +53,24 @@ fn place_on_screen(window: Size, monitor: Size) -> Point {
         ((monitor.width - window.width) / 2.0).max(0.0),
         ((monitor.height - window.height) / 2.0).max(0.0),
     )
+}
+
+/// Directories that hold preset packs: the override, beside settings, and
+/// beside the player.
+fn preset_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(dir) = std::env::var_os("DJUSB_PRESETS") {
+        roots.push(PathBuf::from(dir));
+    }
+    if let Some(dir) = settings_path().parent() {
+        roots.push(dir.join("presets"));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            roots.push(dir.join("presets"));
+        }
+    }
+    roots
 }
 
 /// Phosphor on black. The toolkit's warning colour is unused, so that slot
@@ -91,6 +113,7 @@ struct App {
     playing: Option<Playing>,
     status: Status,
     settings: Settings,
+    packs: Vec<Pack>,
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +131,7 @@ impl App {
         let scan = libraries.start_scanning(SCAN_INTERVAL, remembered_volumes());
         let state = libraries.state();
         let settings = load_settings();
+        let packs = discover_packs(&preset_roots());
         let browser = Browser::new(settings.volume_limit(), &state);
         let player = Player::start();
         player.set_volume(browser.volume());
@@ -123,6 +147,7 @@ impl App {
             playing: None,
             status,
             settings,
+            packs,
         }
     }
 
@@ -130,11 +155,13 @@ impl App {
         match message {
             Message::Refresh => {
                 self.state = self.libraries.state();
+                self.packs = discover_packs(&preset_roots());
                 let play = self.play_snap();
                 self.browser.refresh(&Ctx {
                     state: &self.state,
                     settings: &self.settings,
                     play,
+                    packs: &self.packs,
                 });
             }
             Message::Tick => self.status = self.player.status(),
@@ -161,6 +188,7 @@ impl App {
                 state: &self.state,
                 settings: &self.settings,
                 play,
+                packs: &self.packs,
             },
         );
         self.perform(effect);
@@ -201,6 +229,7 @@ impl App {
                         state: &self.state,
                         settings: &self.settings,
                         play,
+                        packs: &self.packs,
                     });
                 }
             }
@@ -236,12 +265,15 @@ impl App {
         ) else {
             return false;
         };
-        self.player.load(cue.paths, cue.start);
+        self.player.load(cue.paths.clone(), cue.start);
         self.playing = Some(Playing {
             titles: cue.titles,
             artists: cue.artists,
             track_titles: cue.track_titles,
             artworks: cue.artworks,
+            keys: cue.keys,
+            bpms: cue.bpms,
+            paths: cue.paths,
         });
         self.status = self.player.status();
         true
@@ -252,6 +284,23 @@ impl App {
             loaded: self.playing.is_some(),
             running: self.status.playing(),
             ended: self.status.ended,
+        }
+    }
+
+    /// The track the deck draws. Empty when nothing has been played.
+    fn deck_track(&self) -> DeckTrack {
+        let Some(playing) = &self.playing else {
+            return DeckTrack::empty();
+        };
+        let Some(index) = self.status.track else {
+            return DeckTrack::empty();
+        };
+        DeckTrack {
+            artist: playing.artists.get(index).cloned().unwrap_or_default(),
+            title: playing.track_titles.get(index).cloned().unwrap_or_default(),
+            key: playing.keys.get(index).cloned().unwrap_or_default(),
+            bpm: playing.bpms.get(index).copied().flatten(),
+            path: playing.paths.get(index).cloned(),
         }
     }
 
@@ -271,6 +320,7 @@ impl App {
             state: &self.state,
             settings: &self.settings,
             play,
+            packs: &self.packs,
         };
         let frame = self.browser.frame(&ctx);
         let shown = self.browser.shown(&ctx);
@@ -283,7 +333,15 @@ impl App {
             .as_ref()
             .and_then(|playing| status_line(&self.status, &playing.titles))
             .unwrap_or_default();
-        chrome::screen(frame, shown, header, status)
+        chrome::screen(
+            frame,
+            shown,
+            header,
+            status,
+            self.player.scope(),
+            self.player.playhead(),
+            self.deck_track(),
+        )
     }
 }
 
@@ -365,7 +423,16 @@ impl Drop for StopOnDrop {
 #[cfg(test)]
 mod tests {
     use super::{place_on_screen, PANEL_HEIGHT, PANEL_WIDTH};
+    use djusb_projectm::render_size;
     use iced::{Point, Size};
+
+    #[test]
+    fn milkdrop_draws_at_half_the_panel() {
+        assert_eq!(
+            render_size(PANEL_WIDTH as u32, PANEL_HEIGHT as u32),
+            (640, 360)
+        );
+    }
 
     #[test]
     fn keeps_the_title_bar_on_a_shorter_monitor() {

@@ -1,19 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatTime } from '../../../logic/format';
+import { trackUrl } from '../backend';
 import { NextIcon, PauseIcon, PlayIcon, PreviousIcon } from '../icons';
 import { Slider } from '../Slider';
 import type { Player } from '../usePlayer';
+import { Deck } from './Deck';
 import { Equalizer } from './Equalizer';
 import { MilkDrop } from './MilkDrop';
 import { Turntable } from './Turntable';
 import { Waveform } from './Waveform';
 
-export type VisualizerMode = 'waveform' | 'equalizer' | 'turntable' | 'milkdrop';
+export type VisualizerMode = 'waveform' | 'equalizer' | 'turntable' | 'deck' | 'milkdrop';
 
 const MODES: { mode: VisualizerMode; label: string }[] = [
   { mode: 'waveform', label: 'Waveform' },
   { mode: 'equalizer', label: 'Equalizer' },
   { mode: 'turntable', label: 'Turntable' },
+  { mode: 'deck', label: 'Deck' },
   { mode: 'milkdrop', label: 'MilkDrop' },
 ];
 
@@ -86,6 +89,15 @@ export function VisualizerOverlay({ player, onClose }: VisualizerOverlayProps) {
           currentTime={player.currentTime}
           duration={player.duration}
           onStartStop={player.togglePlay}
+        />
+      )}
+      {mode === 'deck' && (
+        <Deck
+          track={current?.track ?? null}
+          url={current ? trackUrl(current.libraryId, current.track.id) : null}
+          currentTime={player.currentTime}
+          duration={player.duration}
+          paused={current !== null && !isPlaying}
         />
       )}
       {mode === 'milkdrop' && <MilkDrop analyser={player.analyser} topSlot={topSlot} />}

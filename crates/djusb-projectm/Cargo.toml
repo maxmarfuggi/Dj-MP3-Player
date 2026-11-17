@@ -1,0 +1,19 @@
+[package]
+name = "djusb-projectm"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "Loads projectM as a shared library for the wall player's MilkDrop screen."
+
+# The workspace forbids unsafe code. This crate is the one place the projectM
+# shared library is opened, and every function it exposes is safe. Workspace
+# lints cannot be inherited and overridden together, so the clippy level is
+# repeated here.
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[dependencies]
+libloading = "0.8.9"
