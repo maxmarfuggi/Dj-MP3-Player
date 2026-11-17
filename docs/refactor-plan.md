@@ -267,14 +267,16 @@ desktop's look.
     row, and type large enough to read from the wall.
   - The device display is a radio panel: phosphor green on black. The
     desktop keeps the shared palette.
-- [ ] **4.3 Turntable** · 4–6 days · after 4.2
-  - Render the deck's static parts from the existing SVG to images with
-    `resvg`. Animate the record and tonearm in iced, reusing the maths in
-    `tonearmGeometry.ts` and `labelLayout.ts`.
-- [ ] **4.4 Waveform and equalizer** · 3–5 days · after 3.3
+- [x] **4.3 Deck** · 4–6 days · after 4.2
+  - A CDJ performance screen in place of the device turntable: title, key,
+    remaining time, tempo, a scrolling waveform with beat marks, and a
+    full-track overview. The waveform is scanned from the file. Beat marks
+    use the track's BPM from the start of the file. The desktop keeps its
+    turntable and offers this deck as another visualizer.
+- [x] **4.4 Waveform and equalizer** · 3–5 days · after 3.3
   - Port `Waveform.tsx` and `equalizerBands.ts`, fed by the audio copy and
     `rustfft`.
-- [ ] **4.5 MilkDrop** · 4–8 days · after 3.3
+- [x] **4.5 MilkDrop** · 4–8 days · after 3.3
   - projectM as a separate full-screen mode at a reduced resolution, with
     preset pack choice. Follow the LGPL: shared library, notices, source
     offer.

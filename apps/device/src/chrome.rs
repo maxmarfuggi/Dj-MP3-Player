@@ -5,6 +5,7 @@
 //! shared tokens. The desktop keeps its own palette.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use iced::widget::image::Image;
 use iced::widget::text::Wrapping;
@@ -12,9 +13,11 @@ use iced::widget::{column, container, row, text};
 use iced::{Alignment, Color, ContentFit, Element, Fill, Font, Padding};
 
 use crate::input::Row;
+use crate::playback::{Playhead, Scope};
 use crate::playing::NowHeader;
 use crate::screens::{Frame, Line, Mast, Readout, Tone};
 use crate::tokens::{font, space};
+use crate::visualizer::{deck, equalizer, milkdrop, waveform, DeckTrack};
 
 /// The name baked into `fonts/VT323-Regular.ttf`.
 pub const FACE: Font = Font::with_name("VT323");
@@ -37,6 +40,9 @@ pub fn screen<Message: 'static>(
     shown: Vec<Row>,
     header: Option<NowHeader>,
     status: String,
+    scope: Arc<Scope>,
+    playhead: Playhead,
+    deck_track: DeckTrack,
 ) -> Element<'static, Message> {
     let mut rows = Vec::new();
     if matches!(frame.mast, Mast::NowPlaying) {
@@ -58,6 +64,10 @@ pub fn screen<Message: 'static>(
                 match &mast {
                     Mast::Level(readout) => rows.push(level_block(readout.clone())),
                     Mast::Notice(lines) => rows.push(notice_block(lines.clone())),
+                    Mast::Waveform => rows.push(waveform(Arc::clone(&scope))),
+                    Mast::Equalizer => rows.push(equalizer(Arc::clone(&scope))),
+                    Mast::Deck => rows.push(deck(playhead.clone(), deck_track.clone())),
+                    Mast::MilkDrop(path) => rows.push(milkdrop(Arc::clone(&scope), path.clone())),
                     Mast::NowPlaying | Mast::None => {}
                 }
             }
@@ -71,7 +81,12 @@ pub fn screen<Message: 'static>(
 
     let menu = column(rows).spacing(space::SM).width(Fill).height(Fill);
     let mut stack = vec![rule(), menu.into()];
-    if footer(&status, matches!(mast, Mast::NowPlaying)).is_some() {
+    if footer(
+        &status,
+        matches!(mast, Mast::NowPlaying | Mast::MilkDrop(_)),
+    )
+    .is_some()
+    {
         stack.push(status_line(status));
     }
     container(column(stack).spacing(space::LG).width(Fill).height(Fill))
@@ -166,6 +181,7 @@ fn notice_block<Message: 'static>(lines: Vec<String>) -> Element<'static, Messag
                     .font(FACE)
                     .size(font::size::WALL_DETAIL)
                     .color(FOREGROUND)
+                    .wrapping(Wrapping::Word)
                     .into()
             })
             .collect::<Vec<_>>(),

@@ -10,12 +10,14 @@ workspace = true
 
 [dependencies]
 djusb-core = { path = "../../crates/djusb-core" }
+djusb-projectm = { path = "../../crates/djusb-projectm" }
 # Tokio is the executor, and it provides the timer that refreshes the list.
 # The default set is trimmed: theme detection is left off because the window
 # uses a fixed dark theme, and thread-pool is replaced by tokio.
 iced = { version = "0.14.0", default-features = false, features = [
     "wgpu",
     "tiny-skia",
+    "canvas",
     "crisp",
     "web-colors",
     "tokio",
@@ -32,6 +34,8 @@ symphonia = { version = "0.6.1", features = ["mp3", "aac", "isomp4", "alac", "ai
 rubato = "5.1.0"
 cpal = "0.18.2"
 rtrb = "0.4.1"
+# The equalizer's spectrum. The same FFT the desktop's analyser runs.
+rustfft = "6.4.1"
 
 # The platter encoder and the round key. GPIO exists only on the Pi.
 [target.'cfg(target_os = "linux")'.dependencies]

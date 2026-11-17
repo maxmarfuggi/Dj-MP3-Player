@@ -17,6 +17,11 @@ pub struct Playing {
     pub artists: Vec<String>,
     pub track_titles: Vec<String>,
     pub artworks: Vec<Option<PathBuf>>,
+    /// Musical key, empty when the file does not state one.
+    pub keys: Vec<String>,
+    pub bpms: Vec<Option<f64>>,
+    /// The audio files, in queue order. The deck scans these for waveforms.
+    pub paths: Vec<PathBuf>,
 }
 
 /// One list ready to play. `start` is the pressed row, after tracks with no
@@ -27,6 +32,8 @@ pub struct Cue {
     pub artists: Vec<String>,
     pub track_titles: Vec<String>,
     pub artworks: Vec<Option<PathBuf>>,
+    pub keys: Vec<String>,
+    pub bpms: Vec<Option<f64>>,
     pub start: usize,
 }
 
@@ -66,6 +73,8 @@ pub fn cue_from_entries(
         artists: Vec::new(),
         track_titles: Vec::new(),
         artworks: Vec::new(),
+        keys: Vec::new(),
+        bpms: Vec::new(),
         start: 0,
     };
     for (at, entry) in entries.iter().enumerate() {
@@ -81,6 +90,8 @@ pub fn cue_from_entries(
         cue.artists.push(entry.track.artist.clone());
         cue.track_titles.push(entry.track.title.clone());
         cue.artworks.push(artwork(&entry.track.id));
+        cue.keys.push(entry.track.key.clone().unwrap_or_default());
+        cue.bpms.push(entry.track.bpm);
     }
     Some(cue)
 }
@@ -194,6 +205,8 @@ mod tests {
             cue.artworks[1].as_deref(),
             Some(PathBuf::from("/media/usb/c.jpg").as_path())
         );
+        assert_eq!(cue.bpms, vec![None, None]);
+        assert_eq!(cue.keys, vec![String::new(), String::new()]);
     }
 
     #[test]
@@ -212,6 +225,9 @@ mod tests {
             artists: vec!["Artist".to_string()],
             track_titles: vec!["Two".to_string()],
             artworks: vec![Some(PathBuf::from("two.jpg"))],
+            keys: vec!["F#m".to_string()],
+            bpms: vec![Some(128.0)],
+            paths: vec![PathBuf::from("two.mp3")],
         };
         let heard = Status {
             track: Some(0),
