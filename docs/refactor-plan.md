@@ -257,7 +257,7 @@ On the Pi, list a USB and play it.
 The full experience, driven by the platter and the select key, with the
 desktop's look.
 
-- [ ] **4.1 Design tokens** · 1–2 days · after 3.1
+- [x] **4.1 Design tokens** · 1–2 days · after 3.1
   - One tokens file for colours, fonts and spacing, generating CSS variables
     for the desktop and Rust constants for the device.
 - [ ] **4.2 Screens** · 8–12 days · after 3.2 and 4.1

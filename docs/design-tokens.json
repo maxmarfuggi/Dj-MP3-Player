@@ -1,0 +1,50 @@
+{
+  "color": {
+    "bg": "#0d0e12",
+    "bg-sidebar": "#121318",
+    "surface": "#16181e",
+    "hover": "rgba(255, 255, 255, 0.055)",
+    "pressed": "rgba(255, 255, 255, 0.09)",
+    "border": "rgba(255, 255, 255, 0.075)",
+    "text": "#f2f3f7",
+    "text-dim": "#a3a7b6",
+    "text-faint": "#6d7180",
+    "accent": "#5c9dff",
+    "accent-soft": "rgba(92, 157, 255, 0.15)",
+    "rekordbox": "#8494ff",
+    "device-library-plus": "#c08cff",
+    "serato": "#45c994",
+    "error": "#ff8080"
+  },
+  "font": {
+    "family": "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
+    "size": {
+      "base": 13,
+      "label": 11,
+      "micro": 10,
+      "title": 28,
+      "display": 22,
+      "wall": 36,
+      "wall-detail": 26
+    },
+    "weight": {
+      "medium": 500,
+      "semibold": 600,
+      "bold": 700
+    },
+    "tracking": {
+      "label": "0.08em",
+      "tight": "-0.02em"
+    }
+  },
+  "space": {
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "xxl": 48,
+    "row": 6,
+    "indent": 28
+  }
+}

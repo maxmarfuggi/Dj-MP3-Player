@@ -15,6 +15,9 @@ mod input;
 )]
 mod playback;
 mod playing;
+#[cfg(test)]
+mod token_gen;
+mod tokens;
 
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -22,13 +25,15 @@ use std::time::{Duration, Instant};
 use djusb_core::{
     settings_path, LibraryManager, LibraryState, ScanHandle, Settings, Volume, SCAN_INTERVAL,
 };
+use iced::theme::Palette;
 use iced::widget::{column, container, text};
-use iced::{Color, Element, Fill, Padding, Point, Size, Subscription, Task, Theme};
+use iced::{Element, Fill, Padding, Point, Size, Subscription, Task, Theme};
 
 use home::{home_lines, HomeLine, EMPTY_HOME};
 use input::{apply_control, Applied, Highlight};
 use playback::{Player, Status};
 use playing::{build_queue, status_line, Playing};
+use tokens::{color, font, space};
 
 /// Raspberry Pi Touch Display 2, turned on its side. The panel's native
 /// pixels are 720×1280, and on the wall the long edge is horizontal.
@@ -53,10 +58,26 @@ fn place_on_screen(window: Size, monitor: Size) -> Point {
     )
 }
 
+/// The window uses the shared palette. The toolkit also has a warning
+/// colour, which this shell does not, so that slot stays the dark theme's.
+fn theme(_app: &App) -> Theme {
+    Theme::custom(
+        "DJ USB",
+        Palette {
+            background: color::BG,
+            text: color::TEXT,
+            primary: color::ACCENT,
+            success: color::SERATO,
+            danger: color::ERROR,
+            ..Palette::DARK
+        },
+    )
+}
+
 fn main() -> iced::Result {
     iced::application(App::boot, App::update, App::view)
         .title("DJ USB")
-        .theme(Theme::Dark)
+        .theme(theme)
         .window_size((PANEL_WIDTH, PANEL_HEIGHT))
         .position(iced::window::Position::SpecificWith(place_on_screen))
         .subscription(App::subscription)
@@ -185,7 +206,9 @@ impl App {
         let mut rows = Vec::new();
         for entry in self.highlight.rows(items.len(), VISIBLE_ITEMS) {
             rows.push(match entry {
-                input::Row::Pinned { selected } => lined(text(SETTINGS).size(36).into(), selected),
+                input::Row::Pinned { selected } => {
+                    lined(text(SETTINGS).size(font::size::WALL).into(), selected)
+                }
                 input::Row::Item { index, selected } => {
                     lined(line_body(items[index].clone()), selected)
                 }
@@ -196,9 +219,9 @@ impl App {
             .as_ref()
             .map_or(&[][..], |playing| playing.titles.as_slice());
         let status = status_line(&self.status, titles).unwrap_or_default();
-        let list = column(rows).spacing(8).width(Fill).height(Fill);
-        container(column![list, text(status).size(26)].spacing(16))
-            .padding(48)
+        let list = column(rows).spacing(space::SM).width(Fill).height(Fill);
+        container(column![list, text(status).size(font::size::WALL_DETAIL)].spacing(space::LG))
+            .padding(space::XXL)
             .width(Fill)
             .height(Fill)
             .into()
@@ -207,26 +230,26 @@ impl App {
 
 fn line_body(line: HomeLine) -> Element<'static, Message> {
     match line {
-        HomeLine::Volume(name) => text(name).size(36).into(),
+        HomeLine::Volume(name) => text(name).size(font::size::WALL).into(),
         HomeLine::Export { label, detail, .. } => {
-            container(text(format!("{label} · {detail}")).size(26))
+            container(text(format!("{label} · {detail}")).size(font::size::WALL_DETAIL))
                 .padding(Padding {
-                    left: 28.0,
+                    left: space::INDENT,
                     ..Padding::ZERO
                 })
                 .into()
         }
-        HomeLine::Empty => text(EMPTY_HOME).size(26).into(),
+        HomeLine::Empty => text(EMPTY_HOME).size(font::size::WALL_DETAIL).into(),
     }
 }
 
 fn lined(content: Element<'static, Message>, selected: bool) -> Element<'static, Message> {
     container(content)
         .padding(Padding {
-            top: 6.0,
-            bottom: 6.0,
-            left: 16.0,
-            right: 16.0,
+            top: space::ROW,
+            bottom: space::ROW,
+            left: space::LG,
+            right: space::LG,
         })
         .width(Fill)
         .style(move |_theme| row_style(selected))
@@ -236,8 +259,8 @@ fn lined(content: Element<'static, Message>, selected: bool) -> Element<'static,
 fn row_style(selected: bool) -> container::Style {
     if selected {
         container::Style::default()
-            .background(Color::from_rgb8(0x2A, 0x5B, 0xD7))
-            .color(Color::WHITE)
+            .background(color::ACCENT)
+            .color(color::TEXT)
     } else {
         container::Style::default()
     }

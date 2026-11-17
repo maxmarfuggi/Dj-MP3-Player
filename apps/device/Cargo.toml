@@ -35,3 +35,11 @@ rtrb = "0.4.1"
 # The platter encoder and the round key. GPIO exists only on the Pi.
 [target.'cfg(target_os = "linux")'.dependencies]
 gpiocdev = "0.8.0"
+
+# Reads docs/design-tokens.json while building. preserve_order keeps the
+# generated CSS and Rust in the file's order.
+[build-dependencies]
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+
+[dev-dependencies]
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
