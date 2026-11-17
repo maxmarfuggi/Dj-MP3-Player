@@ -370,9 +370,11 @@ impl App {
             status,
             footer_selected,
             glow,
-            self.player.scope(),
-            self.player.playhead(),
-            self.deck_track(),
+            chrome::Visuals {
+                scope: self.player.scope(),
+                playhead: self.player.playhead(),
+                deck: self.deck_track(),
+            },
         )
     }
 }

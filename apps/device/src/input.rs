@@ -299,6 +299,7 @@ pub enum Row {
 
 impl Highlight {
     /// Starts on the first item, or on the pinned row when the list is empty.
+    #[cfg(test)]
     #[must_use]
     pub fn new(item_count: usize) -> Self {
         Self {
@@ -324,14 +325,17 @@ impl Highlight {
 
     /// `footer` adds one stop after the last item. That stop is not one of
     /// the scrolling rows; the screen draws it under the list.
+    #[cfg(test)]
     pub fn move_by(&mut self, steps: i32, item_count: usize, visible_items: usize, footer: bool) {
         self.move_skipping(steps, item_count, visible_items, footer, |_| false);
     }
 
-    /// Like [`Self::move_by`], but `dead` rows are jumped and never highlighted.
+    /// Moves by `steps`. Dead rows are jumped and never highlighted.
     ///
     /// `dead` sees the highlight index. The pinned row is 0. Item `n` is `n + 1`.
-    /// One step lands on the next row that does something.
+    /// One step lands on the next row that does something. `footer` adds one
+    /// stop after the last item. That stop is not one of the scrolling rows;
+    /// the screen draws it under the list.
     pub fn move_skipping(
         &mut self,
         steps: i32,
@@ -354,11 +358,14 @@ impl Highlight {
     }
 
     /// Keeps the highlight inside a list that shrank, and off a row that does nothing.
+    #[cfg(test)]
     pub fn fit(&mut self, item_count: usize, visible_items: usize, footer: bool) {
         self.fit_live(item_count, visible_items, footer, |_| false);
     }
 
-    /// Like [`Self::fit`]. A dead row moves to the next live row, then the previous one.
+    /// Keeps the highlight inside a list that shrank.
+    ///
+    /// A dead row moves to the next live row, then the previous one.
     pub fn fit_live(
         &mut self,
         item_count: usize,
@@ -449,12 +456,14 @@ fn next_live(
 }
 
 /// Moves the highlight, or reports which row was pressed.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Applied {
     Moved(usize),
     Pressed(usize),
 }
 
+#[cfg(test)]
 #[must_use]
 pub fn apply_control(
     highlight: &mut Highlight,

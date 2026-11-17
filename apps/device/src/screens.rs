@@ -474,14 +474,17 @@ impl Browser {
         }
         let choices = self.choices(ctx);
         self.highlight = Highlight::pinned();
-        let dead = |index: usize| row_is_inert(&choices, index);
         self.highlight
-            .move_skipping(1, choices.len(), VISIBLE_ROWS, false, &dead);
+            .move_skipping(1, choices.len(), VISIBLE_ROWS, false, |index| {
+                row_is_inert(&choices, index)
+            });
         if matches!(self.place, Place::Color) {
             let selected = crate::illumination::index(ctx.settings.display_color());
             let steps = i32::try_from(selected).unwrap_or(0);
             self.highlight
-                .move_skipping(steps, choices.len(), VISIBLE_ROWS, false, &dead);
+                .move_skipping(steps, choices.len(), VISIBLE_ROWS, false, |index| {
+                    row_is_inert(&choices, index)
+                });
         }
     }
 

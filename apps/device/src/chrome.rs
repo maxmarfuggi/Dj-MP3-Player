@@ -35,6 +35,13 @@ const COVER: f32 = 200.0;
 const USB_BADGE: f32 = 40.0;
 const USB_GLYPH: f32 = 28.0;
 
+/// The sound, the playhead, and the track the deck draws.
+pub(crate) struct Visuals {
+    pub scope: Arc<Scope>,
+    pub playhead: Playhead,
+    pub deck: DeckTrack,
+}
+
 /// The panel: a lit edge, the screen, and the status line.
 ///
 /// `footer_selected` inverts the playing line, the same way a menu row
@@ -46,12 +53,10 @@ pub fn screen<Message: 'static>(
     status: String,
     footer_selected: bool,
     glow: Glow,
-    scope: Arc<Scope>,
-    playhead: Playhead,
-    deck_track: DeckTrack,
+    visuals: Visuals,
 ) -> Element<'static, Message> {
     if frame.fullscreen {
-        if let Some(picture) = live_visual(&frame.mast, &scope, &playhead, &deck_track, glow) {
+        if let Some(picture) = live_visual(&frame.mast, &visuals, glow) {
             return container(picture)
                 .width(Fill)
                 .height(Fill)
@@ -92,7 +97,7 @@ pub fn screen<Message: 'static>(
             }
         }
     }
-    if let Some(picture) = live_visual(&mast, &scope, &playhead, &deck_track, glow) {
+    if let Some(picture) = live_visual(&mast, &visuals, glow) {
         rows.push(picture);
     }
 
@@ -117,16 +122,14 @@ pub fn screen<Message: 'static>(
 /// The picture under the menu, or the whole screen while it is hidden.
 fn live_visual<Message: 'static>(
     mast: &Mast,
-    scope: &Arc<Scope>,
-    playhead: &Playhead,
-    deck_track: &DeckTrack,
+    visuals: &Visuals,
     glow: Glow,
 ) -> Option<Element<'static, Message>> {
     Some(match mast {
-        Mast::Waveform(theme) => waveform(Arc::clone(scope), *theme),
-        Mast::Equalizer(theme) => equalizer(Arc::clone(scope), *theme),
-        Mast::Deck => deck(playhead.clone(), deck_track.clone()),
-        Mast::MilkDrop(path) => milkdrop(Arc::clone(scope), path.clone(), glow.foreground),
+        Mast::Waveform(theme) => waveform(Arc::clone(&visuals.scope), *theme),
+        Mast::Equalizer(theme) => equalizer(Arc::clone(&visuals.scope), *theme),
+        Mast::Deck => deck(visuals.playhead.clone(), visuals.deck.clone()),
+        Mast::MilkDrop(path) => milkdrop(Arc::clone(&visuals.scope), path.clone(), glow.foreground),
         Mast::NowPlaying | Mast::None | Mast::Level(_) | Mast::Notice(_) => return None,
     })
 }
