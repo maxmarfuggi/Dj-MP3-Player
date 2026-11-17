@@ -17,6 +17,8 @@ pub struct Settings {
     energy_flow_open: bool,
     /// Loudest playback level, from 0 to 1. The desktop does not set this.
     volume_limit: f32,
+    /// Wall-display colour id. `"green"` is the phosphor and is left out of the file.
+    display_color: String,
     /// Fields this version does not use, kept for the next save.
     extra: Map<String, Value>,
 }
@@ -27,6 +29,7 @@ impl Default for Settings {
             orders: BTreeMap::new(),
             energy_flow_open: false,
             volume_limit: 1.0,
+            display_color: "green".to_string(),
             extra: Map::new(),
         }
     }
@@ -69,6 +72,7 @@ impl Settings {
         };
         let energy_flow_open = matches!(map.remove("energyFlowOpen"), Some(Value::Bool(true)));
         let volume_limit = unit_level(map.remove("volumeLimit"));
+        let display_color = display_color_field(map.remove("displayColor"));
         let orders = match map.remove("customPlaylistOrders") {
             Some(Value::Object(entries)) => parse_orders(&entries),
             _ => BTreeMap::new(),
@@ -77,6 +81,7 @@ impl Settings {
             orders,
             energy_flow_open,
             volume_limit,
+            display_color,
             extra: map,
         })
     }
@@ -98,6 +103,12 @@ impl Settings {
         );
         if !is_full_level(self.volume_limit) {
             map.insert("volumeLimit".to_string(), json_level(self.volume_limit));
+        }
+        if self.display_color != "green" {
+            map.insert(
+                "displayColor".to_string(),
+                Value::String(self.display_color.clone()),
+            );
         }
         for (key, value) in &self.extra {
             map.insert(key.clone(), value.clone());
@@ -150,6 +161,21 @@ impl Settings {
             1.0
         };
     }
+
+    /// The wall display's colour. `"green"` is the phosphor. `"scan"` flows.
+    #[must_use]
+    pub fn display_color(&self) -> &str {
+        &self.display_color
+    }
+
+    /// Stores a colour id. A blank id is the phosphor.
+    pub fn set_display_color(&mut self, color: &str) {
+        self.display_color = if color.is_empty() {
+            "green".to_string()
+        } else {
+            color.to_string()
+        };
+    }
 }
 
 #[derive(Debug)]
@@ -194,6 +220,14 @@ enum Host {
     Windows,
     Mac,
     Other,
+}
+
+/// A string is kept. Anything else, including a missing field, is the phosphor.
+fn display_color_field(value: Option<Value>) -> String {
+    match value {
+        Some(Value::String(color)) if !color.is_empty() => color,
+        _ => "green".to_string(),
+    }
 }
 
 /// A finite number is clamped to 0..=1. Anything else means full volume.
@@ -459,6 +493,38 @@ mod tests {
         assert!(!settings.to_json().contains("volumeLimit"));
         settings.set_volume_limit(f32::NAN);
         assert_eq!(settings.volume_limit(), 1.0);
+    }
+
+    #[test]
+    fn the_display_colour_is_green_until_one_is_chosen() {
+        assert_eq!(Settings::new().display_color(), "green");
+        assert!(!Settings::new().to_json().contains("displayColor"));
+        assert_eq!(
+            Settings::from_json(r#"{"displayColor": "scan"}"#)
+                .unwrap()
+                .display_color(),
+            "scan"
+        );
+        assert_eq!(
+            Settings::from_json(r#"{"displayColor": ""}"#)
+                .unwrap()
+                .display_color(),
+            "green"
+        );
+        assert_eq!(
+            Settings::from_json(r#"{"displayColor": 3}"#)
+                .unwrap()
+                .display_color(),
+            "green"
+        );
+        let mut settings = Settings::new();
+        settings.set_display_color("aqua");
+        let again = Settings::from_json(&settings.to_json()).unwrap();
+        assert_eq!(again.display_color(), "aqua");
+        assert!(again.to_json().contains("displayColor"));
+        settings.set_display_color("");
+        assert_eq!(settings.display_color(), "green");
+        assert!(!settings.to_json().contains("displayColor"));
     }
 
     #[test]

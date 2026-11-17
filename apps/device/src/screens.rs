@@ -1,7 +1,8 @@
 //! The wall player's screens, driven by the platter and the select key.
 //!
 //! Every screen has one highlighted row. The top row is pinned: on the USB
-//! list it opens settings, and on every other screen it returns. A level
+//! list it opens settings, and on every other screen it returns. A row that
+//! does nothing is still drawn, but the platter skips it. A level
 //! screen is the exception the controls describe: the platter changes the
 //! value, and the pinned row is what leaves, keeping the value.
 //!
@@ -10,8 +11,9 @@
 //! information, because the platter is already spoken for.
 //!
 //! A visualizer keeps that menu above the picture. Full screen clears it,
-//! and the next turn of the platter brings it back. On the equalizer, Theme
-//! cycles Mirror, LED, and Fire.
+//! and the next turn of the platter brings it back. Theme cycles the
+//! waveform through white, red, blue, and Pulse, and the equalizer through Mirror,
+//! LED, and Fire.
 
 use std::path::PathBuf;
 
@@ -24,7 +26,7 @@ use djusb_projectm::{licence_lines, Pack};
 use crate::home::{home_lines, source_label, tracks_label, volume_name, HomeLine, EMPTY_HOME};
 use crate::input::{Control, Highlight, Row};
 use crate::playing::track_name;
-use crate::visualizer::EqualizerTheme;
+use crate::visualizer::{EqualizerTheme, WaveformTheme};
 
 /// Item rows under the pinned row. The panel is 720 pixels tall.
 pub const VISIBLE_ROWS: usize = 7;
@@ -42,7 +44,10 @@ pub struct Browser {
     limit: u8,
     /// The menu is hidden and the picture fills the screen.
     fullscreen: bool,
+    /// Equalizer style. Mirror, LED, or Fire.
     theme: EqualizerTheme,
+    /// Oscilloscope colour. White, red, blue, or the colour pulse.
+    wave_theme: WaveformTheme,
 }
 
 /// What the screen needs from the player and the libraries.
@@ -95,6 +100,23 @@ pub struct Line {
     pub text: String,
     pub detail: Option<String>,
     pub tone: Tone,
+    pub mark: Mark,
+}
+
+/// A glyph drawn in front of the words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mark {
+    None,
+    /// The USB trident, beside a volume or a return to one.
+    Usb,
+    /// An export on the USB above it: Device Library, Device Library Plus, or Serato.
+    Library,
+    /// A folder, or a return to one.
+    Folder,
+    /// A playlist, or a return to one.
+    Playlist,
+    /// The gear, beside Settings or a return to it.
+    Settings,
 }
 
 /// How a row is drawn when it is not the highlight.
@@ -114,7 +136,7 @@ pub enum Mast {
     Level(Readout),
     Notice(Vec<String>),
     /// The oscilloscope, drawn by the window from the audio copy.
-    Waveform,
+    Waveform(WaveformTheme),
     /// The spectrum, drawn by the window from the audio copy.
     Equalizer(EqualizerTheme),
     /// The CDJ deck: title, key, time, tempo, and the file's waveform.
@@ -148,6 +170,8 @@ pub enum Effect {
         limit: f32,
         volume: f32,
     },
+    /// The wall display's colour. `"scan"` flows; `"green"` is the phosphor.
+    DisplayColor(&'static str),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -171,6 +195,8 @@ enum Place {
         path: PathBuf,
     },
     Settings,
+    /// The illumination colours, including variable scan.
+    Color,
     Bluetooth,
     VolumeLimit,
     About,
@@ -218,7 +244,9 @@ enum Act {
     NowPlaying,
     Library(String),
     Folder(String),
-    Tracks { playlist_id: Option<String> },
+    Tracks {
+        playlist_id: Option<String>,
+    },
     Play(usize),
     Transport,
     Volume,
@@ -226,6 +254,10 @@ enum Act {
     Mode(Vis),
     Bluetooth,
     VolumeLimit,
+    /// Opens the colour list.
+    Colors,
+    /// One illumination colour. `"scan"` flows.
+    Color(&'static str),
     About,
     Licences,
     Pack(PathBuf),
@@ -236,14 +268,29 @@ enum Act {
 
 impl Choice {
     fn row(text: impl Into<String>, detail: Option<String>, tone: Tone, act: Act) -> Self {
+        Self::marked(text, detail, tone, Mark::None, act)
+    }
+
+    fn marked(
+        text: impl Into<String>,
+        detail: Option<String>,
+        tone: Tone,
+        mark: Mark,
+        act: Act,
+    ) -> Self {
         Self {
             line: Line {
                 text: text.into(),
                 detail,
                 tone,
+                mark,
             },
             act,
         }
+    }
+
+    fn usb(text: impl Into<String>) -> Self {
+        Self::marked(text, None, Tone::Dim, Mark::Usb, Act::Nothing)
     }
 
     fn act(text: impl Into<String>, detail: Option<String>, act: Act) -> Self {
@@ -257,18 +304,30 @@ impl Choice {
 
 impl Browser {
     /// Full volume, or the saved limit when that is lower. The highlight
-    /// starts on the first USB row.
+    /// starts on the first row that does something.
     #[must_use]
     pub fn new(limit: f32, state: &LibraryState) -> Self {
         let limit = to_percent(limit);
+        let lines = home_lines(state);
+        let mut highlight = Highlight::pinned();
+        highlight.move_skipping(1, lines.len(), VISIBLE_ROWS, false, |index| {
+            !matches!(
+                lines.get(index.wrapping_sub(1)),
+                Some(HomeLine::Export {
+                    library: Some(_),
+                    ..
+                })
+            ) && index != 0
+        });
         Self {
             place: Place::Home,
-            highlight: Highlight::new(home_lines(state).len()),
+            highlight,
             origin: None,
             volume: limit,
             limit,
             fullscreen: false,
             theme: EqualizerTheme::Mirror,
+            wave_theme: WaveformTheme::White,
         }
     }
 
@@ -289,7 +348,7 @@ impl Browser {
     pub fn frame(&self, ctx: &Ctx<'_>) -> Frame {
         let choices = self.choices(ctx);
         Frame {
-            pinned: line(self.pinned_text(ctx), None, Tone::Text),
+            pinned: self.pinned_line(ctx),
             caption: self.caption(ctx),
             items: choices.into_iter().map(|choice| choice.line).collect(),
             mast: self.mast(ctx),
@@ -307,8 +366,12 @@ impl Browser {
         let before = self.place.clone();
         self.repair(ctx);
         if self.place == before {
+            let choices = self.choices(ctx);
+            let footer = self.footer(ctx);
             self.highlight
-                .fit(self.choices(ctx).len(), VISIBLE_ROWS, self.footer(ctx));
+                .fit_live(choices.len(), VISIBLE_ROWS, footer, |index| {
+                    row_is_inert(&choices, index)
+                });
         } else {
             self.fullscreen = false;
             self.park(ctx);
@@ -327,12 +390,25 @@ impl Browser {
         }
         match control {
             Control::Turn(steps) if self.on_level() => self.nudge(steps),
-            Control::Turn(steps) => {
-                self.highlight.move_by(
+            Control::Turn(steps) if matches!(self.place, Place::Color) => {
+                let choices = self.choices(ctx);
+                self.highlight.move_skipping(
                     steps,
-                    self.choices(ctx).len(),
+                    choices.len(),
                     VISIBLE_ROWS,
                     self.footer(ctx),
+                    |index| row_is_inert(&choices, index),
+                );
+                self.preview_color(ctx)
+            }
+            Control::Turn(steps) => {
+                let choices = self.choices(ctx);
+                self.highlight.move_skipping(
+                    steps,
+                    choices.len(),
+                    VISIBLE_ROWS,
+                    self.footer(ctx),
+                    |index| row_is_inert(&choices, index),
                 );
                 Effect::None
             }
@@ -396,7 +472,29 @@ impl Browser {
             self.highlight = Highlight::pinned();
             return;
         }
-        self.highlight = Highlight::new(self.choices(ctx).len());
+        let choices = self.choices(ctx);
+        self.highlight = Highlight::pinned();
+        let dead = |index: usize| row_is_inert(&choices, index);
+        self.highlight
+            .move_skipping(1, choices.len(), VISIBLE_ROWS, false, &dead);
+        if matches!(self.place, Place::Color) {
+            let selected = crate::illumination::index(ctx.settings.display_color());
+            let steps = i32::try_from(selected).unwrap_or(0);
+            self.highlight
+                .move_skipping(steps, choices.len(), VISIBLE_ROWS, false, &dead);
+        }
+    }
+
+    /// The colour under the highlight, when the platter is on the colour list.
+    fn preview_color(&self, ctx: &Ctx<'_>) -> Effect {
+        let index = self.highlight.index();
+        if index == 0 || self.highlight.on_footer(self.choices(ctx).len()) {
+            return Effect::None;
+        }
+        match self.choices(ctx).get(index - 1).map(|choice| &choice.act) {
+            Some(Act::Color(id)) => Effect::DisplayColor(id),
+            _ => Effect::None,
+        }
     }
 
     fn nudge(&mut self, steps: i32) -> Effect {
@@ -476,6 +574,7 @@ impl Browser {
             Place::Visualizer(_) => self.go(Place::Visualizers, ctx),
             Place::Milk { .. } => self.go(Place::Visualizer(Vis::MilkDrop), ctx),
             Place::Settings => self.go(Place::Home, ctx),
+            Place::Color => self.go(Place::Settings, ctx),
             Place::Bluetooth | Place::VolumeLimit | Place::About | Place::Licences => {
                 self.go(Place::Settings, ctx)
             }
@@ -589,6 +688,11 @@ impl Browser {
                 self.go(Place::VolumeLimit, ctx);
                 Effect::None
             }
+            Act::Colors => {
+                self.go(Place::Color, ctx);
+                Effect::None
+            }
+            Act::Color(id) => Effect::DisplayColor(id),
             Act::About => {
                 self.go(Place::About, ctx);
                 Effect::None
@@ -610,7 +714,10 @@ impl Browser {
                 Effect::None
             }
             Act::Theme => {
-                self.theme = self.theme.next();
+                match self.place {
+                    Place::Visualizer(Vis::Waveform) => self.wave_theme = self.wave_theme.next(),
+                    _ => self.theme = self.theme.next(),
+                }
                 Effect::None
             }
         }
@@ -676,9 +783,10 @@ impl Browser {
             Place::NowPlaying => self.transport_choices(ctx),
             Place::Visualizers => visualizer_choices(),
             Place::Visualizer(Vis::MilkDrop) => milk_choices(ctx.packs),
-            Place::Visualizer(mode) => show_choices(self.theme, *mode),
-            Place::Milk { .. } => show_choices(self.theme, Vis::MilkDrop),
-            Place::Settings => self.settings_choices(),
+            Place::Visualizer(mode) => show_choices(self.theme, self.wave_theme, *mode),
+            Place::Milk { .. } => show_choices(self.theme, self.wave_theme, Vis::MilkDrop),
+            Place::Settings => self.settings_choices(ctx),
+            Place::Color => color_choices(),
             Place::Licences => licence_choices(),
             Place::Volume
             | Place::VolumeLimit
@@ -697,7 +805,7 @@ impl Browser {
         ]
     }
 
-    fn settings_choices(&self) -> Vec<Choice> {
+    fn settings_choices(&self, ctx: &Ctx<'_>) -> Vec<Choice> {
         vec![
             Choice::act("Bluetooth", None, Act::Bluetooth),
             Choice::act(
@@ -705,41 +813,62 @@ impl Browser {
                 Some(percent_label(self.limit)),
                 Act::VolumeLimit,
             ),
+            Choice::act(
+                "Color",
+                Some(crate::illumination::label(ctx.settings.display_color()).to_string()),
+                Act::Colors,
+            ),
             Choice::act("About", None, Act::About),
             Choice::act("Licences", None, Act::Licences),
         ]
     }
 
-    fn pinned_text(&self, ctx: &Ctx<'_>) -> String {
-        match &self.place {
-            Place::Home => "Settings".to_string(),
-            Place::Playlists { library_id, path } => find_library(ctx, library_id)
-                .map(|library| playlist_back(library, path))
-                .unwrap_or_else(|| back("USB")),
+    fn pinned_line(&self, ctx: &Ctx<'_>) -> Line {
+        let (text, mark) = match &self.place {
+            Place::Home => ("Settings".to_string(), Mark::Settings),
+            Place::Playlists { library_id, path } => match find_library(ctx, library_id) {
+                Some(library) => (
+                    playlist_back(library, path),
+                    playlist_back_mark(library, path),
+                ),
+                None => (back("USB"), Mark::Usb),
+            },
             Place::Tracks {
                 library_id, parent, ..
-            } => find_library(ctx, library_id)
-                .map(|library| tracks_back(library, parent))
-                .unwrap_or_else(|| back("USB")),
+            } => match find_library(ctx, library_id) {
+                Some(library) => (
+                    tracks_back(library, parent),
+                    tracks_back_mark(library, parent),
+                ),
+                None => (back("USB"), Mark::Usb),
+            },
             Place::NowPlaying => {
                 if self
                     .origin
                     .as_ref()
                     .is_some_and(|origin| origin_is_open(ctx, origin))
                 {
-                    back("Tracks")
+                    (back("Tracks"), Mark::None)
                 } else {
-                    back("USB")
+                    (back("USB"), Mark::Usb)
                 }
             }
-            Place::Volume | Place::Visualizers => back("Now playing"),
-            Place::Visualizer(_) => back("Visualizer"),
-            Place::Milk { .. } => back("MilkDrop"),
-            Place::Settings => back("USB"),
-            Place::Bluetooth | Place::VolumeLimit | Place::About | Place::Licences => {
-                back("Settings")
-            }
-            Place::ProjectM => back("Licences"),
+            Place::Volume | Place::Visualizers => (back("Now playing"), Mark::None),
+            Place::Visualizer(_) => (back("Visualizer"), Mark::None),
+            Place::Milk { .. } => (back("MilkDrop"), Mark::None),
+            Place::Settings => (back("USB"), Mark::Usb),
+            Place::Color
+            | Place::Bluetooth
+            | Place::VolumeLimit
+            | Place::About
+            | Place::Licences => (back("Settings"), Mark::Settings),
+            Place::ProjectM => (back("Licences"), Mark::None),
+        };
+        Line {
+            text,
+            detail: None,
+            tone: Tone::Text,
+            mark,
         }
     }
 
@@ -775,7 +904,7 @@ impl Browser {
             Place::VolumeLimit => Mast::Level(readout(self.limit)),
             Place::About => Mast::Notice(about_lines()),
             Place::Bluetooth => Mast::Notice(bluetooth_lines()),
-            Place::Visualizer(Vis::Waveform) => Mast::Waveform,
+            Place::Visualizer(Vis::Waveform) => Mast::Waveform(self.wave_theme),
             Place::Visualizer(Vis::Equalizer) => Mast::Equalizer(self.theme),
             Place::Visualizer(Vis::Deck) => Mast::Deck,
             Place::Visualizer(Vis::MilkDrop) if ctx.packs.is_empty() => {
@@ -793,6 +922,14 @@ impl Browser {
     }
 }
 
+/// A list row the platter must not land on. The pinned row and the playing
+/// line are never inert: both do something when pressed.
+fn row_is_inert(choices: &[Choice], index: usize) -> bool {
+    choices
+        .get(index.wrapping_sub(1))
+        .is_some_and(|choice| matches!(choice.act, Act::Nothing))
+}
+
 fn home_choices(ctx: &Ctx<'_>) -> Vec<Choice> {
     let mut choices = Vec::new();
     if ctx.play.loaded {
@@ -800,17 +937,29 @@ fn home_choices(ctx: &Ctx<'_>) -> Vec<Choice> {
     }
     for line in home_lines(ctx.state) {
         choices.push(match line {
-            HomeLine::Volume(name) => Choice::dead(name, Tone::Dim),
+            HomeLine::Volume(name) => Choice::usb(name),
             HomeLine::Export {
                 label,
                 detail,
                 library: Some(id),
-            } => Choice::act(label, Some(detail), Act::Library(id)),
+            } => Choice::marked(
+                label,
+                Some(detail),
+                Tone::Text,
+                Mark::Library,
+                Act::Library(id),
+            ),
             HomeLine::Export {
                 label,
                 detail,
                 library: None,
-            } => Choice::row(label, Some(detail), Tone::Danger, Act::Nothing),
+            } => Choice::marked(
+                label,
+                Some(detail),
+                Tone::Danger,
+                Mark::Library,
+                Act::Nothing,
+            ),
             HomeLine::Empty => Choice::dead(EMPTY_HOME, Tone::Dim),
         });
     }
@@ -852,7 +1001,8 @@ fn playlist_choices(ctx: &Ctx<'_>, library_id: &str, path: &[String]) -> Vec<Cho
 }
 
 fn node_choice(node: &PlaylistNode) -> Choice {
-    let act = if node.kind == PlaylistKind::Folder || !node.children.is_empty() {
+    let opens_folder = node.kind == PlaylistKind::Folder || !node.children.is_empty();
+    let act = if opens_folder {
         Act::Folder(node.id.clone())
     } else {
         Act::Tracks {
@@ -864,7 +1014,43 @@ fn node_choice(node: &PlaylistNode) -> Choice {
     } else {
         Some(tracks_label(node.track_ids.len()))
     };
-    Choice::act(node.name.clone(), detail, act)
+    Choice::marked(
+        node.name.clone(),
+        detail,
+        Tone::Text,
+        kind_mark(node.kind),
+        act,
+    )
+}
+
+/// The glyph for the row above a playlist list. One level down returns to the USB.
+fn playlist_back_mark(library: &Library, path: &[String]) -> Mark {
+    if path.len() <= 1 {
+        Mark::Usb
+    } else {
+        node_mark(library, &path[path.len() - 2])
+    }
+}
+
+/// The glyph for the row above a track list. The library root returns to the USB.
+fn tracks_back_mark(library: &Library, parent: &[String]) -> Mark {
+    match parent.last() {
+        None => Mark::Usb,
+        Some(id) => node_mark(library, id),
+    }
+}
+
+fn node_mark(library: &Library, id: &str) -> Mark {
+    find_playlist(&library.playlists, id)
+        .map(|node| kind_mark(node.kind))
+        .unwrap_or(Mark::None)
+}
+
+fn kind_mark(kind: PlaylistKind) -> Mark {
+    match kind {
+        PlaylistKind::Folder => Mark::Folder,
+        PlaylistKind::Playlist => Mark::Playlist,
+    }
 }
 
 fn track_choices(ctx: &Ctx<'_>, library_id: &str, playlist_id: Option<&str>) -> Vec<Choice> {
@@ -919,17 +1105,25 @@ fn track_detail(track: &Track) -> Option<String> {
     }
 }
 
-/// Full screen sits under the back row. The equalizer adds Theme under that.
-fn show_choices(theme: EqualizerTheme, mode: Vis) -> Vec<Choice> {
+/// Full screen sits under the back row. The waveform and the equalizer add Theme under that.
+fn show_choices(equalizer: EqualizerTheme, waveform: WaveformTheme, mode: Vis) -> Vec<Choice> {
     let mut choices = vec![Choice::act("Full screen", None, Act::FullScreen)];
-    if mode == Vis::Equalizer {
-        choices.push(Choice::act(
-            "Theme",
-            Some(theme.label().to_string()),
-            Act::Theme,
-        ));
+    let theme = match mode {
+        Vis::Waveform => Some(waveform.label()),
+        Vis::Equalizer => Some(equalizer.label()),
+        Vis::Deck | Vis::MilkDrop => None,
+    };
+    if let Some(label) = theme {
+        choices.push(Choice::act("Theme", Some(label.to_string()), Act::Theme));
     }
     choices
+}
+
+fn color_choices() -> Vec<Choice> {
+    crate::illumination::swatches()
+        .into_iter()
+        .map(|swatch| Choice::act(swatch.label, None, Act::Color(swatch.id)))
+        .collect()
 }
 
 fn visualizer_choices() -> Vec<Choice> {
@@ -1100,14 +1294,6 @@ fn find_library<'a>(ctx: &'a Ctx<'_>, id: &str) -> Option<&'a Library> {
     ctx.state.libraries.iter().find(|library| library.id == id)
 }
 
-fn line(text: impl Into<String>, detail: Option<String>, tone: Tone) -> Line {
-    Line {
-        text: text.into(),
-        detail,
-        tone,
-    }
-}
-
 fn percent_label(percent: u8) -> String {
     format!("{percent}%")
 }
@@ -1158,8 +1344,9 @@ fn unit(percent: u8) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{back, Browser, Ctx, Effect, Mast, PlaySnap};
+    use super::{back, Browser, Ctx, Effect, Mark, Mast, PlaySnap};
     use crate::input::Control;
+    use crate::visualizer::WaveformTheme;
     use djusb_core::{
         Library, LibraryLoadError, LibrarySource, LibraryState, PlaylistKind, PlaylistNode,
         Settings, Track,
@@ -1232,6 +1419,17 @@ mod tests {
         }
     }
 
+    fn plus() -> Library {
+        Library {
+            id: "deviceLibraryPlus-1".to_string(),
+            source: LibrarySource::DeviceLibraryPlus,
+            volume_name: "GIGS".to_string(),
+            volume_path: "D:\\".to_string(),
+            tracks: vec![track("1", "One")],
+            playlists: Vec::new(),
+        }
+    }
+
     fn state(libraries: Vec<Library>) -> LibraryState {
         LibraryState {
             libraries,
@@ -1256,9 +1454,15 @@ mod tests {
             .iter()
             .position(|item| item.text == label)
             .unwrap_or_else(|| panic!("no row {label}"));
-        let target = i32::try_from(index + 1).unwrap();
-        let cursor = i32::try_from(browser.cursor()).unwrap();
-        let _ = browser.apply(Control::Turn(target - cursor), ctx);
+        let target = index + 1;
+        for _ in 0..64 {
+            if browser.cursor() == target {
+                break;
+            }
+            let step = if browser.cursor() < target { 1 } else { -1 };
+            let _ = browser.apply(Control::Turn(step), ctx);
+        }
+        assert_eq!(browser.cursor(), target, "could not highlight {label}");
         browser.apply(Control::Press, ctx)
     }
 
@@ -1269,25 +1473,71 @@ mod tests {
     }
 
     #[test]
+    fn the_colour_list_starts_on_the_saved_colour_and_a_turn_previews_the_next() {
+        let libraries = state(Vec::new());
+        let mut settings = Settings::new();
+        settings.set_display_color("blue");
+        let ctx = context(&libraries, &settings, PlaySnap::idle());
+        let mut browser = Browser::new(1.0, &libraries);
+        press_pinned(&mut browser, &ctx);
+        let frame = browser.frame(&ctx);
+        let color = frame
+            .items
+            .iter()
+            .find(|item| item.text == "Color")
+            .unwrap();
+        assert_eq!(color.detail.as_deref(), Some("Blue"));
+        press_text(&mut browser, &ctx, "Color");
+        assert_eq!(browser.frame(&ctx).pinned.text, back("Settings"));
+        assert_eq!(browser.frame(&ctx).items[0].text, "Variable scan");
+        assert_eq!(browser.cursor(), crate::illumination::index("blue") + 1);
+        assert_eq!(
+            browser.apply(Control::Turn(1), &ctx),
+            Effect::DisplayColor("violet")
+        );
+        assert_eq!(
+            browser.apply(Control::Press, &ctx),
+            Effect::DisplayColor("violet")
+        );
+        let scan = i32::try_from(crate::illumination::index("scan") + 1).unwrap();
+        let cursor = i32::try_from(browser.cursor()).unwrap();
+        let _ = browser.apply(Control::Turn(scan - cursor), &ctx);
+        assert_eq!(
+            browser.apply(Control::Press, &ctx),
+            Effect::DisplayColor("scan")
+        );
+        press_pinned(&mut browser, &ctx);
+        assert_eq!(browser.frame(&ctx).pinned.text, back("USB"));
+    }
+
+    #[test]
     fn settings_open_from_the_pinned_row_and_return_to_the_usb_list() {
         let libraries = state(vec![gig()]);
         let settings = Settings::new();
         let ctx = context(&libraries, &settings, PlaySnap::idle());
         let mut browser = Browser::new(1.0, &libraries);
         assert_eq!(browser.frame(&ctx).pinned.text, "Settings");
+        assert_eq!(browser.frame(&ctx).pinned.mark, Mark::Settings);
         press_pinned(&mut browser, &ctx);
         let frame = browser.frame(&ctx);
         assert_eq!(frame.pinned.text, back("USB"));
+        assert_eq!(frame.pinned.mark, Mark::Usb);
         assert_eq!(
             frame
                 .items
                 .iter()
                 .map(|item| item.text.as_str())
                 .collect::<Vec<_>>(),
-            vec!["Bluetooth", "Volume limit", "About", "Licences"]
+            vec!["Bluetooth", "Volume limit", "Color", "About", "Licences"]
         );
+        press_text(&mut browser, &ctx, "Bluetooth");
+        assert_eq!(browser.frame(&ctx).pinned.text, back("Settings"));
+        assert_eq!(browser.frame(&ctx).pinned.mark, Mark::Settings);
+        press_pinned(&mut browser, &ctx);
+        assert_eq!(browser.frame(&ctx).pinned.text, back("USB"));
         press_pinned(&mut browser, &ctx);
         assert_eq!(browser.frame(&ctx).pinned.text, "Settings");
+        assert_eq!(browser.frame(&ctx).pinned.mark, Mark::Settings);
     }
 
     #[test]
@@ -1297,19 +1547,62 @@ mod tests {
         let ctx = context(&libraries, &settings, PlaySnap::idle());
         let mut browser = Browser::new(1.0, &libraries);
 
+        let home = browser.frame(&ctx);
+        assert_eq!(
+            home.items
+                .iter()
+                .find(|item| item.text == "GIGS")
+                .map(|item| item.mark),
+            Some(Mark::Usb)
+        );
+        assert_eq!(
+            home.items
+                .iter()
+                .find(|item| item.text == "Device Library")
+                .map(|item| item.mark),
+            Some(Mark::Library)
+        );
+
         press_text(&mut browser, &ctx, "Device Library");
         let root = browser.frame(&ctx);
         assert_eq!(root.pinned.text, back("USB"));
+        assert_eq!(root.pinned.mark, Mark::Usb);
         assert_eq!(root.caption.as_deref(), Some("GIGS · Device Library"));
         assert_eq!(root.items[0].text, "All tracks");
+        assert_eq!(root.items[0].mark, Mark::None);
+        assert_eq!(
+            root.items
+                .iter()
+                .find(|item| item.text == "House")
+                .map(|item| item.mark),
+            Some(Mark::Folder)
+        );
+        assert_eq!(
+            root.items
+                .iter()
+                .find(|item| item.text == "Techno")
+                .map(|item| item.mark),
+            Some(Mark::Playlist)
+        );
 
         press_text(&mut browser, &ctx, "House");
         assert_eq!(browser.frame(&ctx).pinned.text, back("GIGS"));
+        assert_eq!(browser.frame(&ctx).pinned.mark, Mark::Usb);
         assert_eq!(browser.frame(&ctx).caption.as_deref(), Some("House"));
+        assert_eq!(
+            browser
+                .frame(&ctx)
+                .items
+                .iter()
+                .find(|item| item.text == "Late")
+                .map(|item| item.mark),
+            Some(Mark::Playlist)
+        );
 
         press_text(&mut browser, &ctx, "Late");
         let tracks = browser.frame(&ctx);
         assert_eq!(tracks.pinned.text, back("House"));
+        assert_eq!(tracks.pinned.mark, Mark::Folder);
         assert_eq!(tracks.caption.as_deref(), Some("Late"));
         assert_eq!(tracks.items[0].text, "Artist – Two");
         assert_eq!(tracks.items[1].text, "Artist – One");
@@ -1339,9 +1632,12 @@ mod tests {
         press_text(&mut browser, &ctx, "Techno");
         let frame = browser.frame(&ctx);
         assert_eq!(frame.items[0].text, "Tracks");
+        assert_eq!(frame.items[0].mark, Mark::None);
         assert_eq!(frame.items[1].text, "Peak");
+        assert_eq!(frame.items[1].mark, Mark::Playlist);
         press_text(&mut browser, &ctx, "Tracks");
         assert_eq!(browser.frame(&ctx).pinned.text, back("Techno"));
+        assert_eq!(browser.frame(&ctx).pinned.mark, Mark::Playlist);
         assert_eq!(browser.frame(&ctx).items[0].text, "Artist – One");
     }
 
@@ -1462,7 +1758,7 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_export_does_not_open() {
+    fn a_failed_export_is_shown_and_skipped() {
         let libraries = LibraryState {
             libraries: Vec::new(),
             errors: vec![LibraryLoadError {
@@ -1482,8 +1778,33 @@ mod tests {
             .find(|item| item.text == "Serato")
             .unwrap();
         assert_eq!(row.tone, super::Tone::Danger);
-        press_text(&mut browser, &ctx, "Serato");
+        assert_eq!(row.mark, Mark::Library);
+        assert_eq!(browser.cursor(), 0);
+        let _ = browser.apply(Control::Turn(1), &ctx);
+        assert_eq!(browser.cursor(), 0);
         assert_eq!(browser.frame(&ctx).pinned.text, "Settings");
+    }
+
+    #[test]
+    fn the_platter_skips_the_usb_and_lands_on_its_library() {
+        let libraries = state(vec![gig(), plus()]);
+        let settings = Settings::new();
+        let ctx = context(&libraries, &settings, PlaySnap::idle());
+        let mut browser = Browser::new(1.0, &libraries);
+        let frame = browser.frame(&ctx);
+        assert_eq!(frame.items[0].text, "GIGS");
+        assert_eq!(frame.items[0].mark, Mark::Usb);
+        assert_eq!(frame.items[1].text, "Device Library");
+        assert_eq!(frame.items[1].mark, Mark::Library);
+        assert_eq!(frame.items[2].text, "Device Library Plus");
+        assert_eq!(frame.items[2].mark, Mark::Library);
+        assert_eq!(browser.cursor(), 2);
+        let _ = browser.apply(Control::Turn(-1), &ctx);
+        assert_eq!(browser.cursor(), 0);
+        let _ = browser.apply(Control::Turn(1), &ctx);
+        assert_eq!(browser.cursor(), 2);
+        let _ = browser.apply(Control::Turn(1), &ctx);
+        assert_eq!(browser.cursor(), 3);
     }
 
     #[test]
@@ -1501,7 +1822,6 @@ mod tests {
         assert_eq!(browser.frame(&ctx).items[0].text, crate::home::EMPTY_HOME);
     }
 
-    #[test]
     #[test]
     fn the_playing_line_is_the_last_stop_and_opens_now_playing() {
         let libraries = state(vec![gig()]);
@@ -1631,7 +1951,7 @@ mod tests {
         let mut browser = Browser::new(1.0, &libraries);
 
         press_pinned(&mut browser, &ctx);
-        for label in ["Bluetooth", "Volume limit", "About", "Licences"] {
+        for label in ["Bluetooth", "Volume limit", "Color", "About", "Licences"] {
             press_text(&mut browser, &ctx, label);
             let frame = browser.frame(&ctx);
             assert_eq!(frame.pinned.text, back("Settings"), "{label}");
@@ -1662,7 +1982,10 @@ mod tests {
         browser.confirm_play(&ctx);
         press_text(&mut browser, &ctx, "Visualizer");
         press_text(&mut browser, &ctx, "Waveform");
-        assert!(matches!(browser.frame(&ctx).mast, Mast::Waveform));
+        assert!(matches!(
+            browser.frame(&ctx).mast,
+            Mast::Waveform(WaveformTheme::White)
+        ));
         press_pinned(&mut browser, &ctx);
         press_text(&mut browser, &ctx, "Equalizer");
         assert!(matches!(
@@ -1795,13 +2118,6 @@ mod tests {
         let mut browser = Browser::new(settings.volume_limit(), &libraries);
         let ctx = context(&libraries, &settings, playing());
         open_visualizers(&mut browser, &ctx);
-        press_text(&mut browser, &ctx, "Waveform");
-        assert!(browser
-            .frame(&ctx)
-            .items
-            .iter()
-            .all(|item| item.text != "Theme"));
-        press_pinned(&mut browser, &ctx);
         press_text(&mut browser, &ctx, "Equalizer");
         assert_eq!(browser.frame(&ctx).items[1].text, "Theme");
         assert_eq!(
@@ -1827,6 +2143,44 @@ mod tests {
             .items
             .iter()
             .all(|item| item.text != "Theme"));
+    }
+
+    #[test]
+    fn the_waveform_theme_cycles_from_its_row() {
+        let libraries = state(vec![gig()]);
+        let settings = Settings::new();
+        let mut browser = Browser::new(settings.volume_limit(), &libraries);
+        let ctx = context(&libraries, &settings, playing());
+        open_visualizers(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "Waveform");
+        assert_eq!(browser.frame(&ctx).items[1].text, "Theme");
+        assert_eq!(
+            browser.frame(&ctx).items[1].detail.as_deref(),
+            Some("White")
+        );
+        assert_eq!(
+            browser.frame(&ctx).mast,
+            Mast::Waveform(WaveformTheme::White)
+        );
+        for theme in [
+            WaveformTheme::Red,
+            WaveformTheme::Blue,
+            WaveformTheme::Pulse,
+            WaveformTheme::White,
+        ] {
+            press_text(&mut browser, &ctx, "Theme");
+            assert_eq!(
+                browser.frame(&ctx).items[1].detail.as_deref(),
+                Some(theme.label())
+            );
+            assert_eq!(browser.frame(&ctx).mast, Mast::Waveform(theme));
+        }
+        press_pinned(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "Equalizer");
+        assert_eq!(
+            browser.frame(&ctx).items[1].detail.as_deref(),
+            Some("Mirror")
+        );
     }
 
     #[test]

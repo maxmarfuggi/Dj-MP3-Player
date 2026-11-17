@@ -1,7 +1,8 @@
 //! Platter turn and select-key press.
 //!
-//! One slow detent moves one row. Detents at least 80 ms apart stay at one
-//! row; faster detents move two, four, or eight rows. The round key, and
+//! One slow detent moves one row that does something. A row that does nothing
+//! is drawn, but the platter skips it. Detents at least 80 ms apart stay at
+//! one row; faster detents move two, four, or eight rows. The round key, and
 //! Enter during development, press the highlighted row. The pinned row is
 //! one detent above the first item and stays on screen while the list scrolls.
 //! When a screen offers the playing line, it is one detent below the last
@@ -323,23 +324,58 @@ impl Highlight {
 
     /// `footer` adds one stop after the last item. That stop is not one of
     /// the scrolling rows; the screen draws it under the list.
-    pub fn move_by(
+    pub fn move_by(&mut self, steps: i32, item_count: usize, visible_items: usize, footer: bool) {
+        self.move_skipping(steps, item_count, visible_items, footer, |_| false);
+    }
+
+    /// Like [`Self::move_by`], but `dead` rows are jumped and never highlighted.
+    ///
+    /// `dead` sees the highlight index. The pinned row is 0. Item `n` is `n + 1`.
+    /// One step lands on the next row that does something.
+    pub fn move_skipping(
         &mut self,
         steps: i32,
         item_count: usize,
         visible_items: usize,
         footer: bool,
+        dead: impl Fn(usize) -> bool,
     ) {
         let last = item_count + usize::from(footer);
-        self.index = moved_index(self.index, steps, last);
+        let direction = steps.signum();
+        let mut left = steps.unsigned_abs();
+        while left > 0 {
+            match next_live(self.index, direction, last, &dead) {
+                Some(next) => self.index = next,
+                None => break,
+            }
+            left -= 1;
+        }
         self.reveal(item_count, visible_items);
     }
 
-    /// Keeps the highlight inside a list that shrank.
+    /// Keeps the highlight inside a list that shrank, and off a row that does nothing.
     pub fn fit(&mut self, item_count: usize, visible_items: usize, footer: bool) {
+        self.fit_live(item_count, visible_items, footer, |_| false);
+    }
+
+    /// Like [`Self::fit`]. A dead row moves to the next live row, then the previous one.
+    pub fn fit_live(
+        &mut self,
+        item_count: usize,
+        visible_items: usize,
+        footer: bool,
+        dead: impl Fn(usize) -> bool,
+    ) {
         let last = item_count + usize::from(footer);
         if self.index > last {
             self.index = last;
+        }
+        if dead(self.index) {
+            if let Some(next) = next_live(self.index, 1, last, &dead) {
+                self.index = next;
+            } else if let Some(prev) = next_live(self.index, -1, last, &dead) {
+                self.index = prev;
+            }
         }
         self.reveal(item_count, visible_items);
     }
@@ -390,11 +426,26 @@ impl Highlight {
     }
 }
 
-fn moved_index(index: usize, steps: i32, item_count: usize) -> usize {
-    let last = i64::try_from(item_count).unwrap_or(i64::MAX);
-    let current = i64::try_from(index).unwrap_or(last);
-    let next = current.saturating_add(i64::from(steps)).clamp(0, last);
-    usize::try_from(next).unwrap_or(item_count)
+/// The next index in `direction` that `dead` rejects, within `0..=last`.
+fn next_live(
+    index: usize,
+    direction: i32,
+    last: usize,
+    dead: &impl Fn(usize) -> bool,
+) -> Option<usize> {
+    if direction == 0 {
+        return None;
+    }
+    let last = i64::try_from(last).unwrap_or(i64::MAX);
+    let mut cursor = i64::try_from(index).unwrap_or(0) + i64::from(direction);
+    while (0..=last).contains(&cursor) {
+        let at = usize::try_from(cursor).unwrap_or(0);
+        if !dead(at) {
+            return Some(at);
+        }
+        cursor += i64::from(direction);
+    }
+    None
 }
 
 /// Moves the highlight, or reports which row was pressed.
@@ -601,6 +652,29 @@ mod tests {
         assert_eq!(highlight.index(), 0);
         highlight.move_by(20, 3, 8, false);
         assert_eq!(highlight.index(), 3);
+    }
+
+    #[test]
+    fn a_turn_skips_a_row_that_does_nothing() {
+        let dead = |index: usize| index == 1 || index == 4;
+        let mut highlight = Highlight::pinned();
+        highlight.move_skipping(1, 5, 8, false, dead);
+        assert_eq!(highlight.index(), 2);
+        highlight.move_skipping(2, 5, 8, false, dead);
+        assert_eq!(highlight.index(), 5);
+        highlight.move_skipping(1, 5, 8, false, dead);
+        assert_eq!(highlight.index(), 5);
+        highlight.move_skipping(-1, 5, 8, false, dead);
+        assert_eq!(highlight.index(), 3);
+        highlight.move_skipping(-5, 5, 8, false, dead);
+        assert_eq!(highlight.index(), 0);
+    }
+
+    #[test]
+    fn a_dead_row_is_left_when_the_list_changes() {
+        let mut highlight = Highlight::new(5);
+        highlight.fit_live(5, 8, false, |index| index == 1);
+        assert_eq!(highlight.index(), 2);
     }
 
     #[test]

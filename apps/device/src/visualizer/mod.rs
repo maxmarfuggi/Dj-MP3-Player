@@ -16,5 +16,5 @@ mod spectrum;
 mod waveform;
 
 pub(crate) use deck::{deck, DeckTrack};
-pub(crate) use draw::{equalizer, waveform, EqualizerTheme};
+pub(crate) use draw::{equalizer, waveform, EqualizerTheme, WaveformTheme};
 pub(crate) use milk::milkdrop;

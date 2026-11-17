@@ -11,16 +11,20 @@ use djusb_projectm::{render_size, Show};
 use iced::widget::canvas::{self, Image};
 use iced::widget::image::Handle;
 use iced::widget::text::{self, LineHeight, Shaping};
-use iced::{alignment, window, Element, Fill, Pixels, Point, Rectangle};
+use iced::{alignment, window, Color, Element, Fill, Pixels, Point, Rectangle};
 
-use crate::chrome::{BACKGROUND, FACE, FOREGROUND};
+use crate::chrome::{BACKGROUND, FACE};
 use crate::playback::Scope;
 use crate::tokens::font;
 use crate::{PANEL_HEIGHT, PANEL_WIDTH};
 
 /// The picture, scaled up to the space under the pinned row.
-pub fn milkdrop<Message: 'static>(scope: Arc<Scope>, pack: PathBuf) -> Element<'static, Message> {
-    iced::widget::canvas(Milk { scope, pack })
+pub fn milkdrop<Message: 'static>(
+    scope: Arc<Scope>,
+    pack: PathBuf,
+    color: Color,
+) -> Element<'static, Message> {
+    iced::widget::canvas(Milk { scope, pack, color })
         .width(Fill)
         .height(Fill)
         .into()
@@ -29,6 +33,7 @@ pub fn milkdrop<Message: 'static>(scope: Arc<Scope>, pack: PathBuf) -> Element<'
 struct Milk {
     scope: Arc<Scope>,
     pack: PathBuf,
+    color: Color,
 }
 
 #[derive(Default)]
@@ -112,7 +117,7 @@ impl<Message> canvas::Program<Message> for Milk {
             frame.fill_text(canvas::Text {
                 content: message.clone(),
                 position: frame.center(),
-                color: FOREGROUND,
+                color: self.color,
                 size: Pixels(font::size::WALL_DETAIL),
                 line_height: LineHeight::default(),
                 font: FACE,

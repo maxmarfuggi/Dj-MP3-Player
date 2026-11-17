@@ -1,7 +1,7 @@
 //! Wall player for a Raspberry Pi, also run on this computer while developing.
 //!
 //! The window is the size of the 7" panel and is drawn as a radio display:
-//! phosphor green on black. A background thread scans volumes through
+//! a chosen colour on black. A background thread scans volumes through
 //! [`djusb_core`]. Arrow keys turn the highlight and Enter presses it. On
 //! the Pi the platter and the round key do the same.
 
@@ -9,6 +9,7 @@ mod chrome;
 #[cfg(target_os = "linux")]
 mod gpio;
 mod home;
+mod illumination;
 mod input;
 #[allow(
     dead_code,
@@ -79,14 +80,15 @@ fn preset_roots() -> Vec<PathBuf> {
 
 /// Phosphor on black. The toolkit's warning colour is unused, so that slot
 /// stays the dark theme's.
-fn theme(_app: &App) -> Theme {
+fn theme(app: &App) -> Theme {
+    let glow = illumination::glow(app.settings.display_color(), app.key_origin.elapsed());
     Theme::custom(
         "DJ USB",
         Palette {
             background: chrome::BACKGROUND,
-            text: chrome::FOREGROUND,
-            primary: chrome::FOREGROUND,
-            success: chrome::FOREGROUND,
+            text: glow.foreground,
+            primary: glow.foreground,
+            success: glow.foreground,
             danger: chrome::ALERT,
             ..Palette::DARK
         },
@@ -218,6 +220,14 @@ impl App {
                 self.player.set_volume(level);
                 self.status = self.player.status();
             }
+            Effect::DisplayColor(id) => {
+                if self.settings.display_color() != id {
+                    self.settings.set_display_color(id);
+                    if let Err(error) = self.settings.save(&settings_path()) {
+                        eprintln!("Settings could not be saved: {error}");
+                    }
+                }
+            }
             Effect::Limit { limit, volume } => {
                 self.settings.set_volume_limit(limit);
                 if let Err(error) = self.settings.save(&settings_path()) {
@@ -345,6 +355,7 @@ impl App {
         let frame = self.browser.frame(&ctx);
         let shown = self.browser.shown(&ctx);
         let footer_selected = self.browser.footer_selected(&ctx);
+        let glow = illumination::glow(self.settings.display_color(), self.key_origin.elapsed());
         let header = self
             .playing
             .as_ref()
@@ -355,6 +366,7 @@ impl App {
             header,
             status,
             footer_selected,
+            glow,
             self.player.scope(),
             self.player.playhead(),
             self.deck_track(),

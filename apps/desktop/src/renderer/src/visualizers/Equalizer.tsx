@@ -76,22 +76,37 @@ interface LedLayout {
   rows: number;
   rowPitch: number;
   base: number;
+  radius: number;
   /** The unlit lights, drawn once per size. */
   background: HTMLCanvasElement;
-  /** A lit light with its glow, per colour, drawn centred on the light. */
-  sprites: Record<LedColor, HTMLCanvasElement>;
 }
 
 /** The height of `.visualizer-bottom`, in CSS pixels; the lights stop above it. */
 const BOTTOM_CONTROLS_HEIGHT = 68;
+/** Lamp radius as a fraction of the tighter cell pitch. */
+const LED_RADIUS_RATIO = 0.34;
 
-function ledLayout(width: number, height: number, px: number): LedLayout {
+export interface LedMetrics {
+  slot: number;
+  rows: number;
+  rowPitch: number;
+  base: number;
+  radius: number;
+}
+
+/** Cell size for the LED matrix. Lamps stay inside their cells so a dark gap remains. */
+export function ledMetrics(width: number, height: number, px: number): LedMetrics {
   const slot = width / LED_COLUMNS;
   const top = height * 0.05;
   const base = height - (BOTTOM_CONTROLS_HEIGHT + 4) * px;
   const rows = Math.max(4, Math.floor((base - top) / slot));
   const rowPitch = (base - top) / rows;
-  const radius = Math.min(slot, rowPitch) * 0.34;
+  const radius = Math.min(slot, rowPitch) * LED_RADIUS_RATIO;
+  return { slot, rows, rowPitch, base, radius };
+}
+
+function ledLayout(width: number, height: number, px: number): LedLayout {
+  const { slot, rows, rowPitch, base, radius } = ledMetrics(width, height, px);
 
   const background = document.createElement('canvas');
   background.width = width;
@@ -108,40 +123,9 @@ function ledLayout(width: number, height: number, px: number): LedLayout {
       context.fill();
     }
   }
+  context.globalAlpha = 1;
 
-  const sprite = (color: string) => {
-    const size = Math.ceil(radius * 4.4);
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const spriteContext = canvas.getContext('2d')!;
-    const center = size / 2;
-    const glow = spriteContext.createRadialGradient(center, center, radius * 0.6, center, center, center);
-    glow.addColorStop(0, `${color}50`);
-    glow.addColorStop(1, `${color}00`);
-    spriteContext.fillStyle = glow;
-    spriteContext.fillRect(0, 0, size, size);
-    const light = spriteContext.createRadialGradient(center, center - radius * 0.3, 0, center, center, radius);
-    light.addColorStop(0, '#ffffffcc');
-    light.addColorStop(0.18, color);
-    light.addColorStop(1, color);
-    spriteContext.fillStyle = light;
-    spriteContext.beginPath();
-    spriteContext.arc(center, center, radius, 0, Math.PI * 2);
-    spriteContext.fill();
-    return canvas;
-  };
-
-  return {
-    width,
-    height,
-    slot,
-    rows,
-    rowPitch,
-    base,
-    background,
-    sprites: { green: sprite(LED_COLORS.green), yellow: sprite(LED_COLORS.yellow), red: sprite(LED_COLORS.red) },
-  };
+  return { width, height, slot, rows, rowPitch, base, radius, background };
 }
 interface EqualizerProps {
   analyser: AnalyserNode | null;
@@ -215,7 +199,9 @@ export function Equalizer({ analyser, topSlot }: EqualizerProps) {
       if (style === 'led') {
         if (led?.width !== width || led.height !== height) led = ledLayout(width, height, px);
         context.drawImage(led.background, 0, 0);
-        context.globalCompositeOperation = 'lighter';
+        // Same circle as the unlit lamp. A glow or highlight reads as a second ring.
+        context.globalCompositeOperation = 'source-over';
+        context.globalAlpha = 1;
         for (let column = 0; column < LED_COLUMNS; column++) {
           const level = Math.max(levels[column * 2]!, levels[column * 2 + 1]!);
           const peak = Math.max(peaks[column * 2]!.level, peaks[column * 2 + 1]!.level);
@@ -223,15 +209,18 @@ export function Equalizer({ analyser, topSlot }: EqualizerProps) {
           const peakRow = Math.min(led.rows, Math.round(peak * led.rows)) - 1;
           for (let row = 0; row < led.rows; row++) {
             if (row >= lit && row !== peakRow) continue;
-            const sprite = led.sprites[ledColor(row, led.rows)];
-            context.drawImage(
-              sprite,
-              (column + 0.5) * led.slot - sprite.width / 2,
-              led.base - (row + 0.5) * led.rowPitch - sprite.height / 2,
+            context.fillStyle = LED_COLORS[ledColor(row, led.rows)];
+            context.beginPath();
+            context.arc(
+              (column + 0.5) * led.slot,
+              led.base - (row + 0.5) * led.rowPitch,
+              led.radius,
+              0,
+              Math.PI * 2,
             );
+            context.fill();
           }
         }
-        context.globalCompositeOperation = 'source-over';
         return;
       }
 

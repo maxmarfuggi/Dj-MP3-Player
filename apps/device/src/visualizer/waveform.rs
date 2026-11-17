@@ -1,4 +1,8 @@
 //! The oscilloscope trace. A port of the geometry in `Waveform.tsx`.
+//!
+//! A solid theme paints the line in one colour. Pulse walks the same colour
+//! wheel the desktop used to: three hues along the line, one turn every
+//! twenty seconds.
 
 /// Samples read for one trace, matching the desktop analyser's window.
 pub const WAVE_FRAMES: usize = 2048;

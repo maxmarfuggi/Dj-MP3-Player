@@ -1,9 +1,9 @@
 //! The waveform and equalizer canvases.
 //!
 //! Each one redraws itself from the audio copy. The waveform is the desktop
-//! oscilloscope: a rising-zero lock, a twenty-second colour cycle, and a
-//! trail. The equalizer is the desktop's mirror, LED, and fire styles, fed
-//! by the log bands and a smoothed FFT.
+//! oscilloscope: a rising-zero lock, a soft trail, and a white, red, blue, or
+//! pulsing line on the app's black. The equalizer is the desktop's mirror, LED, and
+//! fire styles, fed by the log bands and a smoothed FFT.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -19,17 +19,59 @@ use super::spectrum::{Spectrum, FFT_SIZE, SMOOTHING};
 use super::waveform::{
     downmix, hsl, hue_at, trace, GRADIENT_HUES, TRAIL_FRAMES, TRAIL_KEEP, WAVE_FRAMES,
 };
-use crate::chrome::FACE;
+use crate::chrome::{BACKGROUND, FACE};
 use crate::playback::Scope;
-use crate::tokens::font;
+use crate::tokens::{color, font};
 
-const WAVE_BACKGROUND: Color = Color::from_rgb8(0x0b, 0x0c, 0x10);
 const LINE_WIDTH: f32 = 3.0;
 const GLOW_WIDTH: f32 = 14.0;
 
+/// White, red, blue, and the colour pulse. The same four as the desktop waveform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaveformTheme {
+    White,
+    Red,
+    Blue,
+    /// The line walks the colour wheel, the way the first waveform did.
+    Pulse,
+}
+
+impl WaveformTheme {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::White => "White",
+            Self::Red => "Red",
+            Self::Blue => "Blue",
+            Self::Pulse => "Pulse",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::White => Self::Red,
+            Self::Red => Self::Blue,
+            Self::Blue => Self::Pulse,
+            Self::Pulse => Self::White,
+        }
+    }
+
+    /// The line colour. Pulse has no single colour, so it is absent.
+    fn color(self) -> Option<Color> {
+        match self {
+            Self::White => Some(Color::WHITE),
+            Self::Red => Some(Color::from_rgb8(0xff, 0x40, 0x40)),
+            Self::Blue => Some(color::ACCENT),
+            Self::Pulse => None,
+        }
+    }
+}
+
 /// The live oscilloscope.
-pub fn waveform<Message: 'static>(scope: Arc<Scope>) -> Element<'static, Message> {
-    iced::widget::canvas(Waveform { scope })
+pub fn waveform<Message: 'static>(
+    scope: Arc<Scope>,
+    theme: WaveformTheme,
+) -> Element<'static, Message> {
+    iced::widget::canvas(Waveform { scope, theme })
         .width(FillLength)
         .height(FillLength)
         .into()
@@ -74,10 +116,12 @@ pub fn equalizer<Message: 'static>(
 
 struct Waveform {
     scope: Arc<Scope>,
+    theme: WaveformTheme,
 }
 
 struct WaveTrace {
     points: Vec<(f32, f32)>,
+    /// Hue of this frame. Solid themes ignore it.
     hue: f32,
 }
 
@@ -148,25 +192,55 @@ impl<Message> canvas::Program<Message> for Waveform {
         _cursor: iced::mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
-        frame.fill_rectangle(Point::ORIGIN, frame.size(), WAVE_BACKGROUND);
+        frame.fill_rectangle(Point::ORIGIN, frame.size(), BACKGROUND);
         let kept = state.trail.len();
         for (index, trace) in state.trail.iter().enumerate() {
             let age = kept - index;
             let alpha = TRAIL_KEEP.powi(i32::try_from(age).unwrap_or(i32::MAX));
-            stroke_wave(&mut frame, &trace.points, trace.hue, alpha, false);
+            paint_wave(&mut frame, self.theme, trace, alpha, false);
         }
-        stroke_wave(
-            &mut frame,
-            &state.current.points,
-            state.current.hue,
-            1.0,
-            true,
-        );
+        paint_wave(&mut frame, self.theme, &state.current, 1.0, true);
         vec![frame.into_geometry()]
     }
 }
 
-fn stroke_wave(frame: &mut canvas::Frame, points: &[(f32, f32)], hue: f32, alpha: f32, glow: bool) {
+fn paint_wave(
+    frame: &mut canvas::Frame,
+    theme: WaveformTheme,
+    trace: &WaveTrace,
+    alpha: f32,
+    glow: bool,
+) {
+    if let Some(ink) = theme.color() {
+        stroke_wave(frame, &trace.points, ink, alpha, glow);
+    } else {
+        stroke_pulse(frame, &trace.points, trace.hue, alpha, glow);
+    }
+}
+
+fn stroke_wave(
+    frame: &mut canvas::Frame,
+    points: &[(f32, f32)],
+    ink: Color,
+    alpha: f32,
+    glow: bool,
+) {
+    let Some(path) = line(points) else {
+        return;
+    };
+    if glow {
+        frame.stroke(&path, solid_stroke(with_alpha(ink, 0.35), GLOW_WIDTH));
+    }
+    frame.stroke(&path, solid_stroke(with_alpha(ink, alpha), LINE_WIDTH));
+}
+
+fn stroke_pulse(
+    frame: &mut canvas::Frame,
+    points: &[(f32, f32)],
+    hue: f32,
+    alpha: f32,
+    glow: bool,
+) {
     let Some(path) = line(points) else {
         return;
     };
@@ -188,6 +262,15 @@ fn stroke_wave(frame: &mut canvas::Frame, points: &[(f32, f32)], hue: f32, alpha
             ..Stroke::default()
         },
     );
+}
+
+fn spectrum_color(hue: f32) -> Color {
+    let (red, green, blue) = hsl(hue, 1.0, 0.68);
+    Color::from_rgb(red, green, blue)
+}
+
+fn horizontal(width: f32, colors: &[Color]) -> canvas::Gradient {
+    linear(Point::ORIGIN, Point::new(width, 0.0), &stops(colors))
 }
 
 struct Equalizer {
@@ -449,10 +532,9 @@ fn paint_led(frame: &mut canvas::Frame, state: &EqualizerState) {
             if row >= lit && i32::try_from(row).unwrap_or(i32::MAX) != peak_row {
                 continue;
             }
-            let color = led_color(row, rows);
+            // Same circle as the unlit lamp. Canvas fills have no blur, so a glow reads as a second ring.
             let center = led_center(column, row, slot, base, row_pitch);
-            frame.fill(&Path::circle(center, radius * 2.2), with_alpha(color, 0.31));
-            frame.fill(&Path::circle(center, radius), color);
+            frame.fill(&Path::circle(center, radius), led_color(row, rows));
         }
     }
 }
@@ -503,11 +585,6 @@ fn line(points: &[(f32, f32)]) -> Option<Path> {
     }))
 }
 
-fn spectrum_color(hue: f32) -> Color {
-    let (red, green, blue) = hsl(hue, 1.0, 0.68);
-    Color::from_rgb(red, green, blue)
-}
-
 fn with_alpha(color: Color, alpha: f32) -> Color {
     Color { a: alpha, ..color }
 }
@@ -529,18 +606,6 @@ fn stops(colors: &[Color]) -> Vec<(f32, Color)> {
         .enumerate()
         .map(|(index, color)| (index as f32 / last, *color))
         .collect()
-}
-
-fn horizontal(width: f32, stops: &[Color]) -> canvas::Gradient {
-    let placed: Vec<(f32, Color)> = {
-        let last = stops.len().saturating_sub(1).max(1) as f32;
-        stops
-            .iter()
-            .enumerate()
-            .map(|(index, color)| (index as f32 / last, *color))
-            .collect()
-    };
-    linear(Point::ORIGIN, Point::new(width, 0.0), &placed)
 }
 
 fn vertical(top: f32, bottom: f32, stops: &[(f32, Color)]) -> canvas::Gradient {

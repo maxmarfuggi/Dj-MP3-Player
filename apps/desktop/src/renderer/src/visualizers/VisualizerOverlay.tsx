@@ -80,7 +80,7 @@ export function VisualizerOverlay({ player, onClose }: VisualizerOverlayProps) {
       onMouseMove={showControls}
       onClick={showControls}
     >
-      {mode === 'waveform' && <Waveform analyser={player.analyser} />}
+      {mode === 'waveform' && <Waveform analyser={player.analyser} topSlot={topSlot} />}
       {mode === 'equalizer' && <Equalizer analyser={player.analyser} topSlot={topSlot} />}
       {mode === 'turntable' && (
         <Turntable
