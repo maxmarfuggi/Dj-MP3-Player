@@ -34,8 +34,37 @@ use crate::input::{Control, Highlight, Row};
 use crate::playing::track_name;
 use crate::visualizer::{EqualizerTheme, WaveformTheme};
 
-/// Item rows under the pinned row. The panel is 720 pixels tall.
-pub const VISIBLE_ROWS: usize = 7;
+/// Item rows that fit under the title on the 720px panel.
+///
+/// `caption` is the page name. `sort` is the control beside it, which is
+/// taller. `status` is the playing line under the list. The highlight stops
+/// on the last of these rows; another turn down scrolls the list and leaves
+/// the highlight there.
+fn list_window(caption: bool, sort: bool, status: bool) -> usize {
+    // iced's default line height is 1.3 times the font size. VT323 is drawn at
+    // the wall sizes, and a row adds the shared row padding above and below.
+    const LINE: f32 = 1.3;
+    const TEXT: f32 = 36.0 * LINE;
+    const DETAIL: f32 = 26.0 * LINE;
+    const ROW_PAD: f32 = 6.0 * 2.0;
+    const ITEM: f32 = TEXT + ROW_PAD;
+    const PITCH: f32 = ITEM + 8.0;
+    // A few pixels so the last row is fully inside the list, not on the edge.
+    const MARGIN: f32 = 8.0;
+
+    let mut menu = 720.0 - 48.0 * 2.0 - 3.0 - 16.0;
+    if status {
+        menu -= 16.0 + DETAIL + ROW_PAD;
+    }
+    let mut head = ITEM + 4.0 + 3.0;
+    if sort {
+        head += 4.0 + ITEM + 4.0;
+    } else if caption {
+        head += 4.0 + DETAIL + 4.0;
+    }
+    let room = (menu - head - MARGIN).max(0.0);
+    ((room / PITCH).floor() as usize).max(1)
+}
 
 /// Two percent for one detent. A fast turn arrives as several steps.
 const PERCENT_STEP: i32 = 2;
@@ -320,7 +349,8 @@ impl Browser {
         let limit = to_percent(limit);
         let lines = home_lines(state);
         let mut highlight = Highlight::pinned();
-        highlight.move_skipping(1, lines.len(), VISIBLE_ROWS, false, false, |index| {
+        let window = list_window(false, false, false);
+        highlight.move_skipping(1, lines.len(), window, false, false, |index| {
             !matches!(
                 lines.get(index.wrapping_sub(1)),
                 Some(HomeLine::Export {
@@ -379,7 +409,7 @@ impl Browser {
     #[must_use]
     pub fn shown(&self, ctx: &Ctx<'_>) -> Vec<Row> {
         self.highlight
-            .rows(self.choices(ctx).len(), VISIBLE_ROWS, self.shows_sort())
+            .rows(self.choices(ctx).len(), self.window(ctx), self.shows_sort())
     }
 
     /// Keeps the highlight and the screen inside the libraries still mounted.
@@ -390,8 +420,9 @@ impl Browser {
             let choices = self.choices(ctx);
             let footer = self.footer(ctx);
             let sort = self.shows_sort();
+            let window = self.window(ctx);
             self.highlight
-                .fit_live(choices.len(), VISIBLE_ROWS, footer, sort, |index| {
+                .fit_live(choices.len(), window, footer, sort, |index| {
                     row_is_inert(&choices, index, sort)
                 });
         } else {
@@ -415,10 +446,11 @@ impl Browser {
             Control::Turn(steps) if matches!(self.place, Place::Color) => {
                 let choices = self.choices(ctx);
                 let sort = self.shows_sort();
+                let window = self.window(ctx);
                 self.highlight.move_skipping(
                     steps,
                     choices.len(),
-                    VISIBLE_ROWS,
+                    window,
                     self.footer(ctx),
                     sort,
                     |index| row_is_inert(&choices, index, sort),
@@ -428,10 +460,11 @@ impl Browser {
             Control::Turn(steps) => {
                 let choices = self.choices(ctx);
                 let sort = self.shows_sort();
+                let window = self.window(ctx);
                 self.highlight.move_skipping(
                     steps,
                     choices.len(),
-                    VISIBLE_ROWS,
+                    window,
                     self.footer(ctx),
                     sort,
                     |index| row_is_inert(&choices, index, sort),
@@ -466,6 +499,15 @@ impl Browser {
     /// Track lists, including All tracks, offer Sort on the title line.
     fn shows_sort(&self) -> bool {
         matches!(self.place, Place::Tracks { .. })
+    }
+
+    /// Item rows that fit on this screen. The highlight cannot pass the last one.
+    fn window(&self, ctx: &Ctx<'_>) -> usize {
+        list_window(
+            self.caption(ctx).is_some(),
+            self.shows_sort(),
+            self.footer(ctx),
+        )
     }
 
     /// The playing line can take the highlight. Now playing and MilkDrop
@@ -508,24 +550,21 @@ impl Browser {
         }
         let choices = self.choices(ctx);
         let sort = self.shows_sort();
+        let window = self.window(ctx);
         self.highlight = Highlight::pinned();
         // Land on the first track. Sort is one detent up from that, on the title line.
         let steps = 1 + i32::from(sort);
         self.highlight
-            .move_skipping(steps, choices.len(), VISIBLE_ROWS, false, sort, |index| {
+            .move_skipping(steps, choices.len(), window, false, sort, |index| {
                 row_is_inert(&choices, index, sort)
             });
         if matches!(self.place, Place::Color) {
             let selected = crate::illumination::index(ctx.settings.display_color());
             let steps = i32::try_from(selected).unwrap_or(0);
-            self.highlight.move_skipping(
-                steps,
-                choices.len(),
-                VISIBLE_ROWS,
-                false,
-                sort,
-                |index| row_is_inert(&choices, index, sort),
-            );
+            self.highlight
+                .move_skipping(steps, choices.len(), window, false, sort, |index| {
+                    row_is_inert(&choices, index, sort)
+                });
         }
     }
 
@@ -1845,6 +1884,66 @@ mod tests {
         }
         assert_eq!(browser.cursor(), 1, "could not highlight sort");
         assert_eq!(browser.apply(Control::Press, ctx), Effect::None);
+    }
+
+    #[test]
+    fn the_highlight_stays_on_the_last_visible_row_of_a_playlist() {
+        let mut tracks = Vec::new();
+        let mut ids = Vec::new();
+        for n in 0..12 {
+            let id = n.to_string();
+            tracks.push(track(&id, &format!("Track {n}")));
+            ids.push(id);
+        }
+        let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let library = Library {
+            id: "rekordbox-1".to_string(),
+            source: LibrarySource::Rekordbox,
+            volume_name: "GIGS".to_string(),
+            volume_path: "D:\\".to_string(),
+            tracks,
+            playlists: vec![node("mix", "Mix", PlaylistKind::Playlist, vec![], &id_refs)],
+        };
+        let libraries = state(vec![library]);
+        let settings = Settings::new();
+        let ctx = context(&libraries, &settings, PlaySnap::idle());
+        let mut browser = Browser::new(1.0, &libraries);
+        press_text(&mut browser, &ctx, "Device Library");
+        press_text(&mut browser, &ctx, "Mix");
+
+        let window = item_rows(&browser, &ctx).len();
+        assert_eq!(window, 6);
+        assert!(window < 12, "the list has to scroll");
+        assert!(item_rows(&browser, &ctx)[0].1);
+
+        for _ in 1..window {
+            let _ = browser.apply(Control::Turn(1), &ctx);
+        }
+        let shown = item_rows(&browser, &ctx);
+        assert_eq!(shown[0].0, 0);
+        assert!(shown.last().is_some_and(|row| row.1));
+
+        let _ = browser.apply(Control::Turn(1), &ctx);
+        let shown = item_rows(&browser, &ctx);
+        assert_eq!(shown.len(), window);
+        assert_eq!(shown[0].0, 1);
+        assert!(shown.last().is_some_and(|row| row.1));
+
+        let _ = browser.apply(Control::Turn(3), &ctx);
+        let shown = item_rows(&browser, &ctx);
+        assert_eq!(shown[0].0, 4);
+        assert!(shown.last().is_some_and(|row| row.1));
+    }
+
+    fn item_rows(browser: &Browser, ctx: &Ctx<'_>) -> Vec<(usize, bool)> {
+        browser
+            .shown(ctx)
+            .into_iter()
+            .filter_map(|row| match row {
+                crate::input::Row::Item { index, selected } => Some((index, selected)),
+                _ => None,
+            })
+            .collect()
     }
 
     #[test]
