@@ -1,0 +1,1 @@
+console=serial0,115200 console=tty1 root=PARTUUID=a9bb0d2a-02 rootfstype=ext4 fsck.repair=yes rootwait quiet splash plymouth.ignore-serial-consoles ds=nocloud;i=rpi-imager-1795050609058 cfg80211.ieee80211_regdom=US video=DSI-1:panel_orientation=left_side_up

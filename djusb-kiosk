@@ -1,0 +1,4 @@
+ls #!/bin/sh
+sleep 0.5
+wlr-randr --output DSI-1 --transform 90
+exec /usr/local/bin/djusb-device

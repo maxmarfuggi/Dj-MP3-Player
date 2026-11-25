@@ -2,8 +2,8 @@
 
 Two products share one core:
 
-- **Desktop app:** Electron and React, as today. It gets installers and
-  automatic updates.
+- **Desktop app:** Electron and React. Unsigned installers are published
+  from a version tag. Automatic updates are Phase 6.
 - **Wall player:** a Rust app on a Raspberry Pi, with an iced UI, a platter
   and a select key, Bluetooth audio and MilkDrop through projectM. The
   screen shows the UI and is not used as a touch control.
@@ -13,8 +13,21 @@ Two products share one core:
 The work is split into small pieces. Each piece has an ID, an estimate, what
 it depends on, and a check that says when it's done. Tick them off as you go.
 
+## Where things stand
+
+Phases 0 through 4 and Track D are done. The desktop reads libraries through
+the Rust core, and the release workflow publishes unsigned installers. The
+wall player browses and plays on a development machine. CI cross-compiles it
+for a 64-bit Pi. A Lite card has booted the player on a Pi 4. That flash is
+not repeatable yet, so 5.1 is still open.
+
+What is left is the appliance (Phase 5) and signed desktop updates (Phase 6).
+Two settings screens already stand in for that work. Bluetooth explains that
+pairing happens on the Pi, and Licences names the main libraries and says the
+full list comes with the image.
+
 Estimates are in **focused working days** for one developer who knows
-TypeScript, is learning Rust, and works with an AI assistant. The
+TypeScript, was learning Rust, and works with an AI assistant. The
 [Estimates](#estimates) section at the end adds them up.
 
 ## Ground rules
@@ -42,7 +55,9 @@ apps/
   device/         Rust wall player
 crates/
   djusb-core/     Rust: data model, readers, volume scanning, media helpers, shared logic
+  djusb-sys/      The few OS calls the core needs, including Windows volume labels
   djusb-node/     Rust → Node bridge (napi-rs) so the desktop can use djusb-core
+  djusb-projectm/ Loads projectM at runtime for the wall player's MilkDrop screen
 fixtures/         Sample USB folders with expected output, used by both languages
 hardware/         Enclosure and build guide
 docs/             This plan, the data contract, design tokens, licence notices
@@ -54,9 +69,9 @@ docs/             This plan, the data contract, design tokens, licence notices
 | --- | --- | --- |
 | Shared core and device app | Rust | — |
 | Device UI | iced | MIT |
-| MilkDrop on the device | projectM, linked as a shared library | LGPL 2.1 |
+| MilkDrop on the device | projectM, loaded at runtime as a shared library | LGPL 2.1 |
 | Desktop to core | napi-rs | MIT |
-| Device audio | symphonia to decode, cpal or PipeWire to play | MPL 2.0 / Apache 2.0 |
+| Device audio | symphonia to decode, cpal to play (PipeWire through ALSA on the Pi) | MPL 2.0 / Apache 2.0 |
 | Encrypted rekordbox database | rusqlite with bundled SQLCipher | MIT / BSD |
 | Device system | Raspberry Pi OS Lite, cage kiosk, udisks2, bluer, gpiocdev | Free |
 | Device input | Platter turns, round key selects a row | — |
@@ -83,6 +98,14 @@ Now playing is the same kind of list, shown under the artwork: **‹ Tracks**,
 **Play** or **Pause**, **Volume**, **Visualizer**. Selecting **Volume**
 opens the level. The platter changes it, and the top row returns to now
 playing and keeps the value. Playback continues while you browse.
+
+A track list puts **Sort** on the title line. Pressing it steps through the
+list's own order, BPM ascending, and BPM descending. Playback uses the order
+on screen.
+
+While something is queued, the line under the list opens now playing. On a
+visualizer the menu sits above the picture. Full screen clears it, and the
+next turn of the platter brings it back.
 
 A fast turn skips several rows. During development the arrow keys turn and
 Enter presses. On the Pi the platter is the encoder on GPIO 17 and GPIO 27,
@@ -115,8 +138,9 @@ port has an exact reference. Nothing changes for users.
   - *Done when:* every reader is checked against fixture files.
 
 - [x] **0.3 Data contract** · 1 day · after 0.2
-  - Write `docs/contract.md`: what each field in `src/shared/types.ts`
-    means, and the exact ID rules (`libraryId` is `<source>-` plus the first
+  - Write `docs/contract.md`: what each field in
+    `apps/desktop/src/shared/types.ts` means, and the exact ID rules
+    (`libraryId` is `<source>-` plus the first
     12 hex characters of the SHA-1 of the volume path; how each reader builds
     track and playlist IDs).
   - Write down the read-only rule and the temporary copy used for Device
@@ -202,6 +226,8 @@ Produces exactly the same `Library` output as TypeScript on every fixture.
   - Windows labels through `GetVolumeInformationW` (faster than the current
     PowerShell call), macOS `/Volumes`, Linux `/media`, `/run/media` and
     udisks2.
+  - The Linux path is unit-tested against a sample `udisksctl dump`. Running
+    it on a Pi is part of 5.2.
 - [x] **1.9 Media helpers** · 2–3 days · after 1.3
   - Range parsing, AIFF as WAV, file types and the NFC/NFD retry. Port
     `range.test.ts`, `aiff.test.ts` and `paths.test.ts`.
@@ -213,8 +239,8 @@ Produces exactly the same `Library` output as TypeScript on every fixture.
 
 ## Phase 2: desktop on the Rust core
 
-Not needed for the wall player, so it can wait until after the device ships
-if time is short.
+The desktop reads libraries through the Rust core. The wall player never
+depended on this phase.
 
 - [x] **2.1 napi-rs bridge** · 3–5 days · after Phase 1
   - `crates/djusb-node` exposes the library manager and the media service to
@@ -224,8 +250,11 @@ if time is short.
     release workflow.
 - [x] **2.3 Comparison run** · 2–3 days · after 2.2
   - Behind a setting, run both cores and log any difference on real USBs.
+  - The setting was not kept. Fixture parity is the check, and the
+    TypeScript readers are gone.
 - [x] **2.4 Remove the TypeScript readers** · 1 day · after 2.3
-  - Once no differences remain. The fixtures stay as the shared tests.
+  - Once no differences remain. The fixtures stay as the shared tests. The
+    builders that write those fixtures stay in TypeScript.
 
 ## Phase 3: device foundations
 
@@ -240,17 +269,26 @@ On the Pi, list a USB and play it.
     development the arrow keys turn and Enter presses. Debounce the switch,
     and skip rows when the platter is turned quickly.
 - [x] **3.3 Playback engine** · 6–10 days · after 3.1
-  - Decode with symphonia, play through cpal or PipeWire. Queue, seek,
-    volume, and a copy of the audio for the visualizers through a ring
-    buffer.
+  - Decode with symphonia, play through cpal. On Linux that is ALSA, which
+    PipeWire serves, so a speaker already chosen as the default output
+    works, wired or Bluetooth. Queue, seek, volume, and a copy of the audio
+    for the visualizers through a ring buffer. The screens do not offer a
+    scrub control. Seek is how the engine restarts a track and resumes.
 - [x] **3.4 Player rules in the core** · 2–4 days · after 3.3
-  - Move the desktop's queue behaviour from `usePlayer.ts` into
-    `djusb-core`: "previous" restarts the track within 3 seconds, the queue
-    reorders without interrupting playback, failed tracks are skipped.
+  - The queue rules live in `djusb-core`: "previous" restarts the track
+    within 3 seconds, the queue reorders without interrupting playback,
+    failed tracks are skipped. The device uses them. The desktop still
+    applies the same rules in `usePlayer.ts`, because its audio plays in
+    the window.
 - [x] **3.5 Settings storage** · 1 day · after 0.7
   - Settings and custom orders in a JSON file, in the contract's format.
+    The device reads a saved order when it shows that playlist. It does not
+    rearrange tracks. `displayColor` is the wall colour. Green is left out
+    of the file.
 
 *Phase done when:* the Pi lists a USB and plays to wired or Bluetooth output.
+The app does this on a development machine, and CI builds the Pi binary.
+Playing on the Pi itself waits for the image in Phase 5.
 
 ## Phase 4: device UI
 
@@ -262,11 +300,14 @@ desktop's look.
     for the desktop and Rust constants for the device.
 - [x] **4.2 Screens** · 8–12 days · after 3.2 and 4.1
   - USB sources, playlists, tracks, now playing, visualizers, and settings
-    (Bluetooth, volume limit, about and licences). Each screen follows
-    [Device controls](#device-controls): one highlighted row, a pinned top
-    row, and type large enough to read from the wall.
-  - The device display is a radio panel: phosphor green on black. The
-    desktop keeps the shared palette.
+    (Bluetooth, volume limit, colour, about and licences). Each screen
+    follows [Device controls](#device-controls): one highlighted row, a
+    pinned top row, and type large enough to read from the wall.
+  - Colour is phosphor green, a set of other swatches, and variable scan.
+  - Bluetooth is a notice until 5.3. Licences is a short list, plus the
+    projectM offer, until 5.4.
+  - The device display is a radio panel. The desktop keeps the shared
+    palette.
 - [x] **4.3 Deck** · 4–6 days · after 4.2
   - A CDJ performance screen in place of the device turntable: title, key,
     remaining time, tempo, a scrolling waveform with beat marks, and a
@@ -275,37 +316,91 @@ desktop's look.
     turntable and offers this deck as another visualizer.
 - [x] **4.4 Waveform and equalizer** · 3–5 days · after 3.3
   - Port `Waveform.tsx` and `equalizerBands.ts`, fed by the audio copy and
-    `rustfft`.
+    `rustfft`. The device scans peaks from the file as it reads, and
+    preloads the next track's waveform. Theme cycles the waveform through
+    white, red, blue, and Pulse, and the equalizer through Mirror, LED, and
+    Fire.
 - [x] **4.5 MilkDrop** · 4–8 days · after 3.3
   - projectM as a separate full-screen mode at a reduced resolution, with
-    preset pack choice. Follow the LGPL: shared library, notices, source
-    offer.
+    preset pack choice. `crates/djusb-projectm` loads the shared library at
+    runtime. Follow the LGPL: shared library, notices, source offer.
+  - A built-in pack (phosphor, spin, tunnel, drift, sparks, swell) is
+    written next to settings on startup. Other packs can sit beside it.
 
 *Phase done when:* a whole browse-and-play session works with the platter
 and the select key, including leaving every screen through its top row.
 
 ## Phase 5: appliance
 
+5.1 is in progress on a Pi 4. The platter and the select key are not fitted
+yet, so a USB keyboard stands in: Up and Left turn one way, Down and Right
+the other, Enter presses. No further UI changes until a fresh flash matches
+the boot list below. The Serato row on a rekordbox stick waits with that.
+
+These pieces turn the binary into a box you can power on.
+
 - [ ] **5.1 System image** · 4–7 days · after Phase 3
   - Raspberry Pi OS Lite, the app as a system service under the cage kiosk,
     a boot splash, and a read-only system partition so pulling the power
     can't corrupt it.
+  - *Done when:* a card flashed from the recipe boots to the USB list with
+    no keyboard, and a settings change survives pulling the power.
+  - Already shown on the bench:
+    - [x] The Pi binary runs, built with `cross` for `aarch64-unknown-linux-gnu`.
+    - [x] cage replaces the desktop. No taskbar, no login, no notifications.
+    - [x] Landscape needs two settings. The boot line carries
+      `video=DSI-1:panel_orientation=left_side_up`. cage does not follow
+      that, so `djusb-kiosk` runs `wlr-randr --output DSI-1 --transform 90`
+      before the player. The desktop Screens setting does not apply.
+    - [x] A stick that is already mounted shows on the USB list. An empty
+      list is the right 5.1 result. Mounting it is 5.2.
+  - Each reflash of this card has to come up like this, with no commands
+    typed on the Pi afterwards:
+    - [ ] Splash, then the USB list, landscape, and no login prompt.
+    - [ ] The keyboard is not required for that screen to appear.
+    - [ ] Pulling the power during boot and at the USB list brings the same
+      screen back.
+    - [ ] A colour change is still there after that power cut. It is not
+      today: the service writes settings under `/var/lib/djusb` on the
+      locked root, and that copy is discarded.
+    - [ ] The system partition rejects writes.
+    - [ ] The recipe in the repo produces that card. The hand-pass notes are
+      `djusb.service`, `djusb-kiosk`, and the `video=` piece of
+      `djusb-cmdline.txt`. The rest of that boot line belongs to the card
+      it was copied from.
 - [ ] **5.2 USB auto-mount** · 2–3 days · after 5.1
-  - udisks2, forced read-only, with FAT32, exFAT and HFS+.
+  - udisks2, forced read-only, with FAT32, exFAT and HFS+. The core already
+    lists `/media`, `/run/media`, and mounts from `udisksctl dump`. This
+    piece is the read-only mount, and the first run of that listing on a Pi.
+  - *Done when:* inserting a rekordbox or Serato stick lists it, and the
+    stick is unchanged afterwards.
 - [ ] **5.3 Bluetooth** · 4–6 days · after 4.2
   - bluer: scan, pair, connect, reconnect automatically, and set the speaker
     as the default output. Pairing is a list on the settings screen: the
     platter moves the highlight and the key connects.
+  - The Bluetooth row is already on the settings screen. It shows a notice.
+    This piece replaces that notice.
+  - *Done when:* a speaker can be paired from the platter and the key, and
+    it reconnects the next time the box boots.
 - [ ] **5.4 Licence notices** · 1–2 days · after Phase 4
   - A `cargo-deny` report and a generated notices screen.
+  - The licences screen already names the main libraries and the projectM
+    offer, and ends with "The full list comes with the appliance image."
+    This piece replaces that line.
+  - *Done when:* the screen lists the licences `cargo-deny` reports, and
+    the placeholder line is gone.
 - [ ] **5.5 Updates from a USB stick** · 3–5 days · after 5.1
   - Signed update files on a USB stick, installed to a second system
     partition so a failed update rolls back (for example with RAUC).
+  - *Done when:* a stick with a signed update installs it, and a bad update
+    boots the previous system.
 
 ## Phase 6: desktop signing and automatic updates
 
-Saved for last on purpose. It only depends on Track D, so it can be pulled
-earlier whenever the install warnings start costing users.
+Saved for last on purpose. It only depends on Track D, which is done, so it
+can start whenever the install warnings start costing users. The release
+workflow still says the installers are unsigned. The app does not check for
+updates.
 
 - [ ] **6.1 Code signing** · 1–3 days · after D.2
   - macOS: create a Developer ID Application certificate in the existing
@@ -343,25 +438,30 @@ earlier whenever the install warnings start costing users.
 | Phase 5: appliance | 14–23 |
 | Phase 6: desktop signing and automatic updates | 4–7, plus waiting for Windows signing approval |
 | **Total** | **85–141** |
+| **Still to do** (Phase 5 and Phase 6) | **18–30**, plus waiting for Windows signing approval |
+
+Phases 0 through 4 and Track D are finished, so the original total is the
+record of the whole plan. The row above is the work that is left.
 
 **Milestones:**
 
-| Milestone | Pieces | Focused days |
+| Milestone | Pieces | Where it stands |
 | --- | --- | --- |
-| Desktop app released (unsigned, manual updates) | 0.1 and Track D | about 3–5 |
-| Wall player plays music from a USB | Phase 0, Phase 1, Phase 3 | about 37–61 |
-| Wall player feature-complete | plus Phase 4 | about 57–94 |
-| Wall player ready as an appliance | plus Phase 5 | about 71–117 |
-| Desktop running on the shared core | plus Phase 2 | about 8–13 more |
-| Desktop signed, with automatic updates | plus Phase 6 | about 4–7 more |
+| Desktop app released (unsigned, manual updates) | 0.1 and Track D | Done. Users download a new installer to update. |
+| Wall player plays music from a USB | Phase 0, Phase 1, Phase 3 | The app does this on a development machine. Playback on a flashed Pi is Phase 5. |
+| Wall player feature-complete | plus Phase 4 | The browse-and-play UI is done. Pairing a speaker is still 5.3. |
+| Wall player ready as an appliance | plus Phase 5 | 5.1 is in progress. A Lite card boots the player. The flash is not repeatable yet. |
+| Desktop running on the shared core | plus Phase 2 | Done. |
+| Desktop signed, with automatic updates | plus Phase 6 | Not started. |
 
-**In calendar time:**
+**In calendar time, for what is left:**
 
-- **Full-time** (about 5 focused days a week): roughly 4–6 months for
-  everything.
-- **Part-time** (about 2 focused days a week): roughly 10–16 months for
-  everything, but the first desktop release lands in about 2–3 weeks and a
-  music-playing wall player in about 4–7 months.
+- **Full-time** (about 5 focused days a week): roughly 4–6 weeks, plus
+  however long Windows signing approval takes.
+- **Part-time** (about 2 focused days a week): roughly 2–4 months, on the
+  same terms.
 
-The ranges are wide because the biggest unknowns are learning Rust, the
-playback engine, and how the Pi performs.
+The original ranges for the whole plan were 4–6 months full-time and 10–16
+months part-time. Those were wide because of learning Rust, the playback
+engine, and how the Pi performs. The first two are behind us. The Pi is
+still unknown until Phase 5 runs on the hardware.
