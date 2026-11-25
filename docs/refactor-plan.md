@@ -18,14 +18,18 @@ it depends on, and a check that says when it's done. Tick them off as you go.
 Phases 0 through 4 and Track D are done. The desktop reads libraries through
 the Rust core, and the release workflow publishes unsigned installers. The
 wall player browses and plays on a development machine. CI cross-compiles it
-for a 64-bit Pi. A Lite card has booted the player on a Pi 4. The repeatable
-recipe is `hardware/image/`. 5.1 stays open until a card prepared with it
-boots that way on its own.
+for a 64-bit Pi. A Lite card on a Pi 4 boots the player, and its system
+partition is mounted read-only under an overlay. The recipe that should
+repeat that is `hardware/image/`. 5.1 stays open until a card prepared with
+that recipe, and nothing else, boots that way on its own. The read-only USB
+mount is in `hardware/usb-mount/`, and the first boot installs it before
+the system partition is locked. 5.2 stays open until a rekordbox or Serato
+stick inserted on the Pi shows on the list and is unchanged.
 
 What is left is the appliance (Phase 5) and signed desktop updates (Phase 6).
-Bluetooth pairing is a list on the settings screen. A speaker on the Pi is
-still the 5.3 check. Licences lists the crates `cargo-deny` reports, plus
-the projectM offer.
+Bluetooth pairing is the settings list: scan, connect, save the speaker,
+and make it the default output. A speaker on the Pi is still the 5.3 check.
+Licences lists the crates `cargo-deny` reports, plus the projectM offer.
 
 Estimates are in **focused working days** for one developer who knows
 TypeScript, was learning Rust, and works with an AI assistant. The
@@ -227,8 +231,9 @@ Produces exactly the same `Library` output as TypeScript on every fixture.
   - Windows labels through `GetVolumeInformationW` (faster than the current
     PowerShell call), macOS `/Volumes`, Linux `/media`, `/run/media` and
     udisks2.
-  - The Linux path is unit-tested against a sample `udisksctl dump`. Running
-    it on a Pi is part of 5.2.
+  - The Linux path is unit-tested against a sample `udisksctl dump`. The
+    read-only mount is in the 5.2 recipe. Running the listing on a Pi is
+    the open 5.2 check.
 - [x] **1.9 Media helpers** · 2–3 days · after 1.3
   - Range parsing, AIFF as WAV, file types and the NFC/NFD retry. Port
     `range.test.ts`, `aiff.test.ts` and `paths.test.ts`.
@@ -355,6 +360,10 @@ These pieces turn the binary into a box you can power on.
       before the player. The desktop Screens setting does not apply.
     - [x] A stick that is already mounted shows on the USB list. An empty
       list is the right 5.1 result. Mounting it is 5.2.
+    - [x] On the current card the system partition (`mmcblk0p2`) is mounted
+      read-only, and the running root is an overlay. SSH answers, and
+      `sudo shutdown -h now` powers it down cleanly. That card was finished
+      by hand. It is not yet proof of the recipe.
   - The recipe is `hardware/image/`. Flash Raspberry Pi OS Lite (64-bit)
     with Imager, user `admin`, SSH and Wi-Fi on, and leave the card in.
     `prepare-boot.ps1` copies the player onto the boot partition and arms
@@ -379,14 +388,47 @@ These pieces turn the binary into a box you can power on.
     piece is the read-only mount, and the first run of that listing on a Pi.
   - *Done when:* inserting a rekordbox or Serato stick lists it, and the
     stick is unchanged afterwards.
+  - In the recipe (`hardware/usb-mount/`):
+    - [x] udisks2 is forced read-only. `rw` is not an allowed option.
+      FAT32 (`vfat`), exFAT and HFS+ get `umask=022`, so the player user
+      can read a mount made as root. `flush` and HFS+ `force` are left out
+      because they write.
+    - [x] A udev rule starts that mount for a USB filesystem of those three
+      types only. The mount is shared, so it is not locked inside
+      `/run/media/root`. The SD card is not USB, so it is left alone.
+    - [x] `djusb-mount` calls `udisksctl mount`. If the kernel still reports
+      the stick writable, it remounts read-only and unmounts if that does
+      not take. The volume list is unchanged. It already reads
+      `udisksctl dump`.
+    - [x] `prepare-boot.ps1` copies the files, and `djusb-firstboot.sh`
+      installs them (`udisks2`, `dosfstools`, `exfatprogs`, `hfsprogs`)
+      before the system partition is locked. `hardware/usb-mount/policy.rs`
+      checks that policy (6 tests).
+  - Still the bench:
+    - [ ] Inserting a rekordbox or Serato stick lists it.
+    - [ ] The stick is unchanged afterwards.
+    - [ ] That listing has been run on the Pi.
 - [ ] **5.3 Bluetooth** · 4–6 days · after 4.2
   - bluer: scan, pair, connect, reconnect automatically, and set the speaker
     as the default output. Pairing is a list on the settings screen: the
     platter moves the highlight and the key connects.
-  - The notice is gone. The list, the saved speaker, and the BlueZ session
-    are in the player. Pairing still has to be tried with a speaker on the Pi.
   - *Done when:* a speaker can be paired from the platter and the key, and
     it reconnects the next time the box boots.
+  - In the player:
+    - [x] The notice is a list. The top row returns to settings. The platter
+      moves the highlight and the key connects. With no adapter the row says
+      "No Bluetooth adapter".
+    - [x] On Linux, BlueZ scans while that screen is open. The key pairs,
+      trusts, and connects. `wpctl` or `pactl` makes the speaker the default
+      output, and playback reopens onto it.
+    - [x] The chosen speaker is `bluetoothSpeaker` in `settings.json`. Boot
+      connects it again, and a dropped link is tried again after a few seconds.
+  - Still the bench:
+    - [ ] A speaker is paired from the platter and the key on the Pi.
+    - [ ] It reconnects the next time the box boots.
+  - The image has to let the player talk to BlueZ, and `wpctl` or `pactl`
+    has to be on the path. That belongs with the image, not a further change
+    to the list.
 - [x] **5.4 Licence notices** · 1–2 days · after Phase 4
   - A `cargo-deny` report and a generated notices screen.
   - The licences screen already names the main libraries and the projectM
@@ -458,8 +500,8 @@ record of the whole plan. The row above is the work that is left.
 | --- | --- | --- |
 | Desktop app released (unsigned, manual updates) | 0.1 and Track D | Done. Users download a new installer to update. |
 | Wall player plays music from a USB | Phase 0, Phase 1, Phase 3 | The app does this on a development machine. Playback on a flashed Pi is Phase 5. |
-| Wall player feature-complete | plus Phase 4 | The browse-and-play UI is done. Pairing a speaker is still 5.3. |
-| Wall player ready as an appliance | plus Phase 5 | 5.1 is in progress. A Lite card boots the player. The flash is not repeatable yet. |
+| Wall player feature-complete | plus Phase 4 | The browse-and-play UI is done. The pairing list is in the player. A speaker on the Pi is still the 5.3 check. |
+| Wall player ready as an appliance | plus Phase 5 | 5.1 is in progress. A Lite card boots the player with a read-only system partition. The recipe has not been the sole way that card was made. The read-only USB mount is in that recipe and has not been tried with a stick. |
 | Desktop running on the shared core | plus Phase 2 | Done. |
 | Desktop signed, with automatic updates | plus Phase 6 | Not started. |
 
@@ -472,5 +514,6 @@ record of the whole plan. The row above is the work that is left.
 
 The original ranges for the whole plan were 4–6 months full-time and 10–16
 months part-time. Those were wide because of learning Rust, the playback
-engine, and how the Pi performs. The first two are behind us. The Pi is
-still unknown until Phase 5 runs on the hardware.
+engine, and how the Pi performs. The first two are behind us. A Pi 4 now
+boots the player. What is still open is making that boot come from the
+recipe alone.
