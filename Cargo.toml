@@ -5,6 +5,7 @@ members = [
     "crates/djusb-node",
     "crates/djusb-sys",
     "crates/djusb-projectm",
+    "crates/djusb-update",
     "apps/device",
 ]
 

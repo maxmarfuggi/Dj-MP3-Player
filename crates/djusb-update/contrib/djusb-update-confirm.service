@@ -1,0 +1,16 @@
+# Marks the running system known-good once the player is up.
+# A slot that never reaches this unit is abandoned on the next boot.
+# The slot record has to be on the data partition, not on the system slot.
+
+[Unit]
+Description=Mark the running DJ USB system slot good
+After=djusb.service
+Requires=djusb.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/djusb-update confirm --state /var/lib/djusb/slots.json
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

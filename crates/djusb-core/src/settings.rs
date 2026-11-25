@@ -19,6 +19,8 @@ pub struct Settings {
     volume_limit: f32,
     /// Wall-display colour id. `"green"` is the phosphor and is left out of the file.
     display_color: String,
+    /// Speaker to connect on boot. Missing until one is chosen from the list.
+    bluetooth_speaker: Option<BluetoothSpeaker>,
     /// Fields this version does not use, kept for the next save.
     extra: Map<String, Value>,
 }
@@ -30,8 +32,42 @@ impl Default for Settings {
             energy_flow_open: false,
             volume_limit: 1.0,
             display_color: "green".to_string(),
+            bluetooth_speaker: None,
             extra: Map::new(),
         }
+    }
+}
+
+/// The speaker the wall player connects when it starts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BluetoothSpeaker {
+    address: String,
+    name: String,
+}
+
+impl BluetoothSpeaker {
+    /// `address` is six hex bytes, with or without separators. A blank name
+    /// is stored as the address, so the list always has something to show.
+    #[must_use]
+    pub fn new(address: &str, name: &str) -> Option<Self> {
+        let address = canonical_address(address)?;
+        let trimmed = name.trim();
+        let name = if trimmed.is_empty() {
+            address.clone()
+        } else {
+            trimmed.to_string()
+        };
+        Some(Self { address, name })
+    }
+
+    #[must_use]
+    pub fn address(&self) -> &str {
+        &self.address
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
     }
 }
 
@@ -73,6 +109,7 @@ impl Settings {
         let energy_flow_open = matches!(map.remove("energyFlowOpen"), Some(Value::Bool(true)));
         let volume_limit = unit_level(map.remove("volumeLimit"));
         let display_color = display_color_field(map.remove("displayColor"));
+        let bluetooth_speaker = bluetooth_speaker_field(map.remove("bluetoothSpeaker"));
         let orders = match map.remove("customPlaylistOrders") {
             Some(Value::Object(entries)) => parse_orders(&entries),
             _ => BTreeMap::new(),
@@ -82,6 +119,7 @@ impl Settings {
             energy_flow_open,
             volume_limit,
             display_color,
+            bluetooth_speaker,
             extra: map,
         })
     }
@@ -109,6 +147,15 @@ impl Settings {
                 "displayColor".to_string(),
                 Value::String(self.display_color.clone()),
             );
+        }
+        if let Some(speaker) = &self.bluetooth_speaker {
+            let mut object = Map::new();
+            object.insert(
+                "address".to_string(),
+                Value::String(speaker.address.clone()),
+            );
+            object.insert("name".to_string(), Value::String(speaker.name.clone()));
+            map.insert("bluetoothSpeaker".to_string(), Value::Object(object));
         }
         for (key, value) in &self.extra {
             map.insert(key.clone(), value.clone());
@@ -176,6 +223,17 @@ impl Settings {
             color.to_string()
         };
     }
+
+    /// The speaker connected from the pairing list, if one has been chosen.
+    #[must_use]
+    pub fn bluetooth_speaker(&self) -> Option<&BluetoothSpeaker> {
+        self.bluetooth_speaker.as_ref()
+    }
+
+    /// Remembers a speaker, or clears it. `None` leaves the field out of the file.
+    pub fn set_bluetooth_speaker(&mut self, speaker: Option<BluetoothSpeaker>) {
+        self.bluetooth_speaker = speaker;
+    }
 }
 
 #[derive(Debug)]
@@ -220,6 +278,38 @@ enum Host {
     Windows,
     Mac,
     Other,
+}
+
+/// Six hex bytes, separators optional. Anything else is not an address.
+fn canonical_address(text: &str) -> Option<String> {
+    let hex: String = text.chars().filter(char::is_ascii_hexdigit).collect();
+    if hex.len() != 12 {
+        return None;
+    }
+    let hex = hex.to_ascii_uppercase();
+    let mut address = String::with_capacity(17);
+    for index in 0..6 {
+        if index > 0 {
+            address.push(':');
+        }
+        address.push_str(&hex[index * 2..index * 2 + 2]);
+    }
+    Some(address)
+}
+
+/// An object with a real address is kept. Anything else means no speaker.
+fn bluetooth_speaker_field(value: Option<Value>) -> Option<BluetoothSpeaker> {
+    let Some(Value::Object(map)) = value else {
+        return None;
+    };
+    let Some(Value::String(address)) = map.get("address") else {
+        return None;
+    };
+    let name = match map.get("name") {
+        Some(Value::String(name)) => name.as_str(),
+        _ => "",
+    };
+    BluetoothSpeaker::new(address, name)
 }
 
 /// A string is kept. Anything else, including a missing field, is the phosphor.
@@ -359,7 +449,7 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use super::{config_dir, Host, Settings, SettingsError};
+    use super::{config_dir, BluetoothSpeaker, Host, Settings, SettingsError};
 
     fn scratch() -> PathBuf {
         static N: AtomicU64 = AtomicU64::new(0);
@@ -525,6 +615,57 @@ mod tests {
         settings.set_display_color("");
         assert_eq!(settings.display_color(), "green");
         assert!(!settings.to_json().contains("displayColor"));
+    }
+
+    #[test]
+    fn the_bluetooth_speaker_is_kept_and_left_out_until_one_is_chosen() {
+        assert!(Settings::new().bluetooth_speaker().is_none());
+        assert!(!Settings::new().to_json().contains("bluetoothSpeaker"));
+        assert!(Settings::from_json("{}")
+            .unwrap()
+            .bluetooth_speaker()
+            .is_none());
+        assert!(Settings::from_json(r#"{"bluetoothSpeaker": "Booth"}"#)
+            .unwrap()
+            .bluetooth_speaker()
+            .is_none());
+        assert!(Settings::from_json(
+            r#"{"bluetoothSpeaker": {"address": "nope", "name": "Booth"}}"#
+        )
+        .unwrap()
+        .bluetooth_speaker()
+        .is_none());
+
+        let saved = Settings::from_json(
+            r#"{"bluetoothSpeaker": {"address": "aa-bb-cc-dd-ee-ff", "name": " Booth "}}"#,
+        )
+        .unwrap();
+        let speaker = saved.bluetooth_speaker().unwrap();
+        assert_eq!(speaker.address(), "AA:BB:CC:DD:EE:FF");
+        assert_eq!(speaker.name(), "Booth");
+
+        let mut settings = Settings::new();
+        settings.set_bluetooth_speaker(BluetoothSpeaker::new("AA:BB:CC:DD:EE:FF", "Booth"));
+        let again = Settings::from_json(&settings.to_json()).unwrap();
+        assert_eq!(
+            again.bluetooth_speaker().map(BluetoothSpeaker::address),
+            Some("AA:BB:CC:DD:EE:FF")
+        );
+        assert!(
+            again.to_json().contains("bluetoothSpeaker"),
+            "{}",
+            again.to_json()
+        );
+        settings.set_bluetooth_speaker(None);
+        assert!(settings.bluetooth_speaker().is_none());
+        assert!(!settings.to_json().contains("bluetoothSpeaker"));
+        assert!(BluetoothSpeaker::new("AA:BB:CC:DD:EE", "Booth").is_none());
+        assert_eq!(
+            BluetoothSpeaker::new("AA:BB:CC:DD:EE:FF", "  ")
+                .unwrap()
+                .name(),
+            "AA:BB:CC:DD:EE:FF"
+        );
     }
 
     #[test]

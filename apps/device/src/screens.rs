@@ -34,6 +34,11 @@ use crate::input::{Control, Highlight, Row};
 use crate::playing::track_name;
 use crate::visualizer::{EqualizerTheme, WaveformTheme};
 
+/// Crates and licences from `docs/third-party-licences.json`, written by the build.
+mod third_party_licences {
+    include!(concat!(env!("OUT_DIR"), "/third_party_licences.rs"));
+}
+
 /// Item rows that fit under the title on the 720px panel.
 ///
 /// `caption` is the page name. `sort` is the control beside it, which is
@@ -95,6 +100,12 @@ pub struct Ctx<'a> {
     pub packs: &'a [Pack],
     /// The line under the list. Empty when nothing is playing.
     pub status: &'a str,
+    /// Speakers the radio has reported. Empty when Bluetooth is not running.
+    pub speakers: &'a [crate::bluetooth::Speaker],
+    /// A Bluetooth adapter is available.
+    pub adapter: bool,
+    /// The pairing list is looking for speakers.
+    pub scanning: bool,
 }
 
 /// Enough of the player to label Play and Pause and to offer Now playing.
@@ -202,6 +213,8 @@ pub enum Effect {
         playlist_id: Option<String>,
         index: usize,
     },
+    /// Pair, connect, and make this speaker the output.
+    ConnectSpeaker(String),
     Toggle,
     Restart,
     Volume(f32),
@@ -299,8 +312,13 @@ enum Act {
     Color(&'static str),
     About,
     Licences,
+    /// Pair and connect the speaker with this address.
+    Speaker(String),
     Pack(PathBuf),
     ProjectM,
+    /// A licence row. The platter can rest on it so the list scrolls.
+    /// Pressing it does not open another screen.
+    Notice,
     FullScreen,
     Theme,
 }
@@ -382,6 +400,12 @@ impl Browser {
     #[must_use]
     pub fn volume(&self) -> f32 {
         unit(self.volume)
+    }
+
+    /// The pairing list is on screen, so the radio should be scanning.
+    #[must_use]
+    pub fn on_bluetooth(&self) -> bool {
+        matches!(self.place, Place::Bluetooth)
     }
 
     #[cfg(test)]
@@ -694,7 +718,7 @@ impl Browser {
 
     fn act(&mut self, act: Act, ctx: &Ctx<'_>) -> Effect {
         match act {
-            Act::Nothing => Effect::None,
+            Act::Nothing | Act::Notice => Effect::None,
             Act::NowPlaying => {
                 self.go(Place::NowPlaying, ctx);
                 Effect::None
@@ -793,6 +817,7 @@ impl Browser {
                 self.go(Place::About, ctx);
                 Effect::None
             }
+            Act::Speaker(address) => Effect::ConnectSpeaker(address),
             Act::Licences => {
                 self.go(Place::Licences, ctx);
                 Effect::None
@@ -883,12 +908,9 @@ impl Browser {
             Place::Milk { .. } => show_choices(self.theme, self.wave_theme, Vis::MilkDrop),
             Place::Settings => self.settings_choices(ctx),
             Place::Color => color_choices(),
+            Place::Bluetooth => bluetooth_choices(ctx),
             Place::Licences => licence_choices(),
-            Place::Volume
-            | Place::VolumeLimit
-            | Place::Bluetooth
-            | Place::About
-            | Place::ProjectM => Vec::new(),
+            Place::Volume | Place::VolumeLimit | Place::About | Place::ProjectM => Vec::new(),
         }
     }
 
@@ -903,7 +925,7 @@ impl Browser {
 
     fn settings_choices(&self, ctx: &Ctx<'_>) -> Vec<Choice> {
         vec![
-            Choice::act("Bluetooth", None, Act::Bluetooth),
+            Choice::act("Bluetooth", bluetooth_detail(ctx), Act::Bluetooth),
             Choice::act(
                 "Volume limit",
                 Some(percent_label(self.limit)),
@@ -986,6 +1008,8 @@ impl Browser {
                 Some(format!("Limit {}", percent_label(self.limit)))
             }
             Place::VolumeLimit => Some("Loudest the player will go".to_string()),
+            Place::Bluetooth if ctx.adapter && ctx.scanning => Some("Scanning".to_string()),
+            Place::Bluetooth if ctx.adapter => Some("Speakers".to_string()),
             Place::Visualizer(Vis::MilkDrop) if !ctx.packs.is_empty() => {
                 Some("Preset pack".to_string())
             }
@@ -999,7 +1023,6 @@ impl Browser {
             Place::Volume => Mast::Level(readout(self.volume)),
             Place::VolumeLimit => Mast::Level(readout(self.limit)),
             Place::About => Mast::Notice(about_lines()),
-            Place::Bluetooth => Mast::Notice(bluetooth_lines()),
             Place::Visualizer(Vis::Waveform) => Mast::Waveform(self.wave_theme),
             Place::Visualizer(Vis::Equalizer) => Mast::Equalizer(self.theme),
             Place::Visualizer(Vis::Deck) => Mast::Deck,
@@ -1279,31 +1302,22 @@ fn no_pack_lines() -> Vec<String> {
 }
 
 fn licence_choices() -> Vec<Choice> {
-    let rows = [
-        ("iced", "MIT"),
-        ("symphonia", "MPL-2.0"),
-        ("cpal", "Apache-2.0"),
-        ("rubato", "MIT or Apache-2.0"),
-        ("rtrb", "MIT or Apache-2.0"),
-        ("rustfft", "MIT or Apache-2.0"),
-        ("rusqlite", "MIT"),
-        ("SQLCipher", "BSD"),
-        ("gpiocdev", "Apache-2.0 or MIT"),
-        ("VT323", "SIL Open Font License"),
+    // projectM is loaded at runtime, and VT323 is a bundled font. cargo-deny
+    // does not see either of them. The offer is first: opening this screen
+    // lands on it.
+    let mut choices = vec![
+        Choice::act("projectM", Some("LGPL-2.1".to_string()), Act::ProjectM),
+        Choice::act(
+            "VT323",
+            Some("SIL Open Font License".to_string()),
+            Act::Notice,
+        ),
     ];
-    let mut choices = rows
-        .into_iter()
-        .map(|(name, licence)| Choice::act(name, Some(licence.to_string()), Act::Nothing))
-        .collect::<Vec<_>>();
-    choices.push(Choice::act(
-        "projectM",
-        Some("LGPL-2.1".to_string()),
-        Act::ProjectM,
-    ));
-    choices.push(Choice::dead(
-        "The full list comes with the appliance image.",
-        Tone::Dim,
-    ));
+    choices.extend(
+        third_party_licences::NOTICES
+            .iter()
+            .map(|notice| Choice::act(notice.label, Some(notice.licence.to_string()), Act::Notice)),
+    );
     choices
 }
 
@@ -1316,12 +1330,41 @@ fn about_lines() -> Vec<String> {
     ]
 }
 
-fn bluetooth_lines() -> Vec<String> {
-    vec![
-        "Bluetooth".to_string(),
-        "Speakers are paired here when the player runs on the Pi.".to_string(),
-        "The player never goes online.".to_string(),
-    ]
+/// The connected speaker, or the one remembered for the next boot.
+fn bluetooth_detail(ctx: &Ctx<'_>) -> Option<String> {
+    ctx.speakers
+        .iter()
+        .find(|speaker| speaker.connected)
+        .map(|speaker| speaker.name.clone())
+        .or_else(|| {
+            ctx.settings
+                .bluetooth_speaker()
+                .map(|speaker| speaker.name().to_string())
+        })
+}
+
+fn bluetooth_choices(ctx: &Ctx<'_>) -> Vec<Choice> {
+    if !ctx.adapter {
+        return vec![Choice::dead("No Bluetooth adapter", Tone::Dim)];
+    }
+    if ctx.speakers.is_empty() {
+        let text = if ctx.scanning {
+            "Looking for speakers"
+        } else {
+            "No speakers found"
+        };
+        return vec![Choice::dead(text, Tone::Dim)];
+    }
+    ctx.speakers
+        .iter()
+        .map(|speaker| {
+            Choice::act(
+                speaker.name.clone(),
+                Some(speaker.detail()),
+                Act::Speaker(speaker.address.clone()),
+            )
+        })
+        .collect()
 }
 
 fn playlist_caption(library: &Library, path: &[String]) -> String {
@@ -1467,11 +1510,12 @@ fn unit(percent: u8) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{back, Browser, Ctx, Effect, Mark, Mast, PlaySnap};
+    use crate::bluetooth::Speaker;
     use crate::input::Control;
     use crate::visualizer::WaveformTheme;
     use djusb_core::{
-        Library, LibraryLoadError, LibrarySource, LibraryState, PlaylistKind, PlaylistNode,
-        Settings, Track,
+        BluetoothSpeaker, Library, LibraryLoadError, LibrarySource, LibraryState, PlaylistKind,
+        PlaylistNode, Settings, Track,
     };
     use djusb_projectm::Pack;
     use std::path::PathBuf;
@@ -1566,6 +1610,9 @@ mod tests {
             play,
             packs: &[],
             status: "",
+            speakers: &[],
+            adapter: false,
+            scanning: false,
         }
     }
 
@@ -1577,7 +1624,7 @@ mod tests {
             .position(|item| item.text == label)
             .unwrap_or_else(|| panic!("no row {label}"));
         let target = index + 1 + usize::from(frame.sort.is_some());
-        for _ in 0..64 {
+        for _ in 0..frame.items.len().saturating_add(2) {
             if browser.cursor() == target {
                 break;
             }
@@ -1660,6 +1707,98 @@ mod tests {
         press_pinned(&mut browser, &ctx);
         assert_eq!(browser.frame(&ctx).pinned.text, "Settings");
         assert_eq!(browser.frame(&ctx).pinned.mark, Mark::Settings);
+    }
+
+    fn booth() -> Speaker {
+        Speaker {
+            address: "AA:BB:CC:DD:EE:01".to_string(),
+            name: "Booth".to_string(),
+            paired: true,
+            connected: false,
+            busy: false,
+            problem: None,
+        }
+    }
+
+    fn floor() -> Speaker {
+        Speaker {
+            address: "AA:BB:CC:DD:EE:02".to_string(),
+            name: "Floor".to_string(),
+            paired: false,
+            connected: true,
+            busy: false,
+            problem: None,
+        }
+    }
+
+    #[test]
+    fn bluetooth_is_a_speaker_list_and_the_key_connects_the_highlighted_row() {
+        let libraries = state(Vec::new());
+        let mut settings = Settings::new();
+        settings.set_bluetooth_speaker(BluetoothSpeaker::new("aa:bb:cc:dd:ee:01", "Booth"));
+        let speakers = vec![booth(), floor()];
+        let mut ctx = context(&libraries, &settings, PlaySnap::idle());
+        ctx.speakers = &speakers;
+        ctx.adapter = true;
+        ctx.scanning = true;
+        let mut browser = Browser::new(1.0, &libraries);
+
+        press_pinned(&mut browser, &ctx);
+        let settings_frame = browser.frame(&ctx);
+        let settings_row = settings_frame
+            .items
+            .iter()
+            .find(|item| item.text == "Bluetooth")
+            .unwrap();
+        assert_eq!(settings_row.detail.as_deref(), Some("Floor"));
+
+        press_text(&mut browser, &ctx, "Bluetooth");
+        let frame = browser.frame(&ctx);
+        assert_eq!(frame.pinned.text, back("Settings"));
+        assert!(matches!(frame.mast, Mast::None));
+        assert_eq!(frame.caption.as_deref(), Some("Scanning"));
+        assert_eq!(
+            frame
+                .items
+                .iter()
+                .map(|item| (item.text.as_str(), item.detail.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![("Booth", Some("Paired")), ("Floor", Some("Connected"))]
+        );
+        assert_eq!(
+            press_text(&mut browser, &ctx, "Booth"),
+            Effect::ConnectSpeaker("AA:BB:CC:DD:EE:01".to_string())
+        );
+        assert_eq!(
+            press_text(&mut browser, &ctx, "Floor"),
+            Effect::ConnectSpeaker("AA:BB:CC:DD:EE:02".to_string())
+        );
+        press_pinned(&mut browser, &ctx);
+        assert_eq!(browser.frame(&ctx).pinned.text, back("USB"));
+    }
+
+    #[test]
+    fn bluetooth_without_speakers_says_whether_it_is_looking() {
+        let libraries = state(Vec::new());
+        let settings = Settings::new();
+        let mut ctx = context(&libraries, &settings, PlaySnap::idle());
+        let mut browser = Browser::new(1.0, &libraries);
+        press_pinned(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "Bluetooth");
+        let missing = browser.frame(&ctx);
+        assert!(matches!(missing.mast, Mast::None));
+        assert_eq!(missing.items[0].text, "No Bluetooth adapter");
+        assert_eq!(browser.cursor(), 0);
+
+        ctx.adapter = true;
+        ctx.scanning = true;
+        let looking = browser.frame(&ctx);
+        assert_eq!(looking.caption.as_deref(), Some("Scanning"));
+        assert_eq!(looking.items[0].text, "Looking for speakers");
+        ctx.scanning = false;
+        let empty = browser.frame(&ctx);
+        assert_eq!(empty.caption.as_deref(), Some("Speakers"));
+        assert_eq!(empty.items[0].text, "No speakers found");
     }
 
     #[test]
@@ -2252,9 +2391,8 @@ mod tests {
                 );
             }
             if label == "Bluetooth" {
-                assert!(
-                    matches!(frame.mast, Mast::Notice(ref lines) if lines.iter().any(|line| line.contains("never goes online")))
-                );
+                assert!(matches!(frame.mast, Mast::None));
+                assert_eq!(frame.items[0].text, "No Bluetooth adapter");
             }
             if label == "Licences" {
                 assert!(frame.items.iter().any(|item| item.text == "symphonia"));
@@ -2508,6 +2646,40 @@ mod tests {
         let frame = browser.frame(&ctx);
         assert!(matches!(frame.mast, Mast::Notice(_)));
         assert_eq!(frame.pinned.text, back("Visualizer"));
+    }
+
+    #[test]
+    fn licences_list_every_crate_cargo_deny_reports() {
+        let libraries = state(vec![gig()]);
+        let settings = Settings::new();
+        let mut browser = Browser::new(settings.volume_limit(), &libraries);
+        let ctx = context(&libraries, &settings, PlaySnap::idle());
+        press_pinned(&mut browser, &ctx);
+        press_text(&mut browser, &ctx, "Licences");
+        let frame = browser.frame(&ctx);
+        assert_eq!(frame.pinned.text, back("Settings"));
+        assert!(frame
+            .items
+            .iter()
+            .any(|item| item.text == "symphonia" && item.detail.as_deref() == Some("MPL-2.0")));
+        assert!(frame.items.iter().any(|item| item.text == "wgpu"));
+        assert!(frame.items.iter().any(|item| item.text == "bitflags 1.3.2"));
+        assert!(frame
+            .items
+            .iter()
+            .any(|item| item.text == "bitflags 2.13.2"));
+        assert!(frame.items.iter().any(|item| item.text == "VT323"));
+        assert!(frame
+            .items
+            .iter()
+            .any(|item| item.text == "projectM" && item.detail.as_deref() == Some("LGPL-2.1")));
+        assert!(frame
+            .items
+            .iter()
+            .all(|item| item.text != "The full list comes with the appliance image."));
+        let effect = press_text(&mut browser, &ctx, "symphonia");
+        assert_eq!(effect, Effect::None);
+        assert_eq!(browser.frame(&ctx).pinned.text, back("Settings"));
     }
 
     #[test]

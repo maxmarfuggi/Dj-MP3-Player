@@ -39,7 +39,8 @@ The window opens at the 7" panel size, turned landscape to 1280×720. It lists a
 Serato USB when one is mounted. Pressing an export plays its tracks in order
 through the default audio output, and pressing it again pauses. A Linux build
 needs ALSA's development package (`libasound2-dev`); on the Pi, PipeWire
-serves ALSA's default output, so wired and Bluetooth speakers both work.
+serves ALSA's default output. Settings, then Bluetooth, pairs a speaker
+with the platter and the select key and makes that speaker the output.
 
 The player's own tests include one that plays through this computer's output.
 It is skipped by default:

@@ -38,8 +38,15 @@ rtrb = "0.4.1"
 rustfft = "6.4.1"
 
 # The platter encoder and the round key. GPIO exists only on the Pi.
+# bluer talks to BlueZ on the system bus. Tokio is the runtime iced already
+# runs, named here so the pairing task can wait and spawn.
 [target.'cfg(target_os = "linux")'.dependencies]
 gpiocdev = "0.8.0"
+bluer = { version = "0.17.4", default-features = false, features = ["bluetoothd"] }
+# Vendored so the Pi cross build does not need libdbus headers in the image.
+# The bundled libdbus is used under the AFL-2.1 licence choice.
+dbus = { version = "0.9.7", features = ["vendored"] }
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 
 # Reads docs/design-tokens.json while building. preserve_order keeps the
 # generated CSS and Rust in the file's order.

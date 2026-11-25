@@ -1,7 +1,10 @@
 //! Writes the wall player's colour, type, and spacing constants from
-//! `docs/design-tokens.json`. The desktop CSS is the same file, checked in
-//! and compared by the device tests.
+//! `docs/design-tokens.json`, and the licence rows from
+//! `docs/third-party-licences.json`. The desktop CSS is the same tokens
+//! file, checked in and compared by the device tests.
 
+#[path = "src/notices.rs"]
+mod notices;
 #[path = "src/token_gen.rs"]
 mod token_gen;
 
@@ -11,6 +14,7 @@ use std::path::Path;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=src/notices.rs");
     println!("cargo:rerun-if-changed=src/token_gen.rs");
 
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -27,4 +31,14 @@ fn main() {
     let out_path = Path::new(&out_dir).join("design_tokens.rs");
     fs::write(&out_path, rust)
         .unwrap_or_else(|error| panic!("writing {}: {error}", out_path.display()));
+
+    let report_path = manifest.join("../../docs/third-party-licences.json");
+    println!("cargo:rerun-if-changed={}", report_path.display());
+    let report = fs::read_to_string(&report_path).unwrap_or_else(|error| {
+        panic!("reading {}: {error}", report_path.display());
+    });
+    let notices = notices::rust_module(&report).unwrap_or_else(|error| panic!("licences: {error}"));
+    let notices_path = Path::new(&out_dir).join("third_party_licences.rs");
+    fs::write(&notices_path, notices)
+        .unwrap_or_else(|error| panic!("writing {}: {error}", notices_path.display()));
 }

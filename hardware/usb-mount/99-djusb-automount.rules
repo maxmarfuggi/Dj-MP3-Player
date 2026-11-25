@@ -1,0 +1,4 @@
+# Start a read-only udisks mount when a USB stick is inserted.
+# FAT32 (vfat), exFAT and HFS+ only. The mount options are in
+# /etc/udisks2/mount_options.conf. The SD card is not USB, so it is left alone.
+ACTION=="add|change", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_TYPE}=="vfat|exfat|hfsplus", ENV{UDISKS_FILESYSTEM_SHARED}="1", TAG+="systemd", ENV{SYSTEMD_WANTS}+="djusb-mount@%k.service"

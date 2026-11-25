@@ -9,7 +9,8 @@
 //!
 //! On the Pi the default output is ALSA's, which PipeWire serves, so a wired
 //! or Bluetooth speaker is whichever PipeWire has chosen. When the output is
-//! lost the engine reopens it and carries on from the position last heard.
+//! lost, or a speaker has just been made the default, the engine reopens it
+//! and carries on from the position last heard.
 //!
 //! "Previous" and a track that fails follow [`djusb_core::Playback`]: previous
 //! restarts the track after three seconds, and a failed track is skipped.
@@ -134,6 +135,14 @@ impl Player {
     /// Sets the level from 0 to 1. Changes ramp over one output buffer.
     pub fn set_volume(&self, level: f32) {
         self.shared.set_volume(level);
+    }
+
+    /// Closes the output so the engine opens the default device again.
+    ///
+    /// A Bluetooth speaker becomes the default after it connects. The stream
+    /// already open is still the previous device until it is dropped.
+    pub fn reopen_output(&self) {
+        self.shared.output_lost.store(true, Ordering::Release);
     }
 
     #[must_use]

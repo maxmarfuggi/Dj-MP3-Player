@@ -23,5 +23,5 @@ pub use model::{
 };
 pub use paths::{exists, file_name_without_extension, resolve_inside_volume, to_relative_path};
 pub use player::{failure_key, Change, Playback, QueueItem, RESTART_WITHIN};
-pub use settings::{settings_path, Settings, SettingsError};
+pub use settings::{settings_path, BluetoothSpeaker, Settings, SettingsError};
 pub use volumes::list_volumes;

@@ -1,0 +1,11 @@
+[Unit]
+Description=Read-only mount of USB %I
+BindsTo=dev-%i.device
+After=dev-%i.device udisks2.service
+Requires=udisks2.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/djusb-mount %i
+ExecStop=-/usr/bin/udisksctl unmount --no-user-interaction --block-device /dev/%i

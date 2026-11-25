@@ -5,12 +5,15 @@
 //! [`djusb_core`]. Arrow keys turn the highlight and Enter presses it. On
 //! the Pi the platter and the round key do the same.
 
+mod bluetooth;
 mod chrome;
 #[cfg(target_os = "linux")]
 mod gpio;
 mod home;
 mod illumination;
 mod input;
+#[cfg(test)]
+mod notices;
 #[allow(
     dead_code,
     reason = "pause, seek and the queue stay on the player until the screens call them"
@@ -30,7 +33,8 @@ use std::time::{Duration, Instant};
 
 use djusb_core::logic::{find_playlist, list_entries, order_key};
 use djusb_core::{
-    settings_path, LibraryManager, LibraryState, ScanHandle, Settings, Volume, SCAN_INTERVAL,
+    settings_path, BluetoothSpeaker, LibraryManager, LibraryState, ScanHandle, Settings, Volume,
+    SCAN_INTERVAL,
 };
 use djusb_projectm::{discover_packs, Pack};
 use iced::theme::Palette;
@@ -120,6 +124,14 @@ struct App {
     status: Status,
     settings: Settings,
     packs: Vec<Pack>,
+    /// Speakers last reported by the radio. Empty until Bluetooth answers.
+    speakers: Vec<bluetooth::Speaker>,
+    /// A Bluetooth adapter is available. Assumed on Linux until the radio says otherwise.
+    adapter: bool,
+    /// The pairing screen is open, so the radio should be scanning.
+    scanning: bool,
+    /// Commands for the Bluetooth task, once it has started.
+    bluetooth: Option<iced::futures::channel::mpsc::UnboundedSender<bluetooth::Command>>,
 }
 
 #[derive(Debug, Clone)]
@@ -129,6 +141,7 @@ enum Message {
     Keyboard(iced::keyboard::Event),
     #[cfg(target_os = "linux")]
     Control(input::Control),
+    Bluetooth(bluetooth::Event),
 }
 
 impl App {
@@ -154,6 +167,10 @@ impl App {
             status,
             settings,
             packs,
+            speakers: Vec::new(),
+            adapter: cfg!(target_os = "linux"),
+            scanning: false,
+            bluetooth: None,
         }
     }
 
@@ -170,6 +187,9 @@ impl App {
                     play,
                     packs: &self.packs,
                     status: &status,
+                    speakers: &self.speakers,
+                    adapter: self.adapter,
+                    scanning: self.scanning,
                 });
             }
             Message::Tick => self.status = self.player.status(),
@@ -184,8 +204,46 @@ impl App {
             }
             #[cfg(target_os = "linux")]
             Message::Control(control) => self.follow(control),
+            Message::Bluetooth(event) => self.on_bluetooth(event),
         }
         Task::none()
+    }
+
+    fn on_bluetooth(&mut self, event: bluetooth::Event) {
+        match event {
+            bluetooth::Event::Ready(commands) => {
+                if let Some(speaker) = self.settings.bluetooth_speaker() {
+                    let _ = commands
+                        .unbounded_send(bluetooth::Command::Connect(speaker.address().to_string()));
+                }
+                let _ = commands.unbounded_send(bluetooth::Command::Scan(self.scanning));
+                self.bluetooth = Some(commands);
+            }
+            bluetooth::Event::Snapshot(snapshot) => {
+                self.adapter = snapshot.adapter;
+                self.speakers = snapshot.speakers;
+            }
+            bluetooth::Event::Chosen(chosen) => {
+                let next = BluetoothSpeaker::new(&chosen.address, &chosen.name);
+                let same = self
+                    .settings
+                    .bluetooth_speaker()
+                    .map(BluetoothSpeaker::address)
+                    == next.as_ref().map(BluetoothSpeaker::address)
+                    && self
+                        .settings
+                        .bluetooth_speaker()
+                        .map(BluetoothSpeaker::name)
+                        == next.as_ref().map(BluetoothSpeaker::name);
+                if !same {
+                    self.settings.set_bluetooth_speaker(next);
+                    if let Err(error) = self.settings.save(&settings_path()) {
+                        eprintln!("Settings could not be saved: {error}");
+                    }
+                }
+                self.player.reopen_output();
+            }
+        }
     }
 
     fn follow(&mut self, control: input::Control) {
@@ -199,9 +257,25 @@ impl App {
                 play,
                 packs: &self.packs,
                 status: &status,
+                speakers: &self.speakers,
+                adapter: self.adapter,
+                scanning: self.scanning,
             },
         );
         self.perform(effect);
+        self.sync_bluetooth();
+    }
+
+    /// Starts a scan while the pairing list is open, and stops it on the way out.
+    fn sync_bluetooth(&mut self) {
+        let scanning = self.browser.on_bluetooth();
+        if scanning == self.scanning {
+            return;
+        }
+        self.scanning = scanning;
+        if let Some(commands) = &self.bluetooth {
+            let _ = commands.unbounded_send(bluetooth::Command::Scan(scanning));
+        }
     }
 
     fn perform(&mut self, effect: Effect) {
@@ -236,6 +310,11 @@ impl App {
                 self.player.set_volume(volume);
                 self.status = self.player.status();
             }
+            Effect::ConnectSpeaker(address) => {
+                if let Some(commands) = &self.bluetooth {
+                    let _ = commands.unbounded_send(bluetooth::Command::Connect(address));
+                }
+            }
             Effect::Play {
                 library_id,
                 playlist_id,
@@ -250,6 +329,9 @@ impl App {
                         play,
                         packs: &self.packs,
                         status: &status,
+                        speakers: &self.speakers,
+                        adapter: self.adapter,
+                        scanning: self.scanning,
                     });
                 }
             }
@@ -342,6 +424,7 @@ impl App {
             iced::keyboard::listen().map(Message::Keyboard),
             #[cfg(target_os = "linux")]
             Subscription::run(platter_stream),
+            Subscription::run(bluetooth::feed).map(Message::Bluetooth),
         ])
     }
 
@@ -354,6 +437,9 @@ impl App {
             play,
             packs: &self.packs,
             status: &status,
+            speakers: &self.speakers,
+            adapter: self.adapter,
+            scanning: self.scanning,
         };
         let frame = self.browser.frame(&ctx);
         let shown = self.browser.shown(&ctx);

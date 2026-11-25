@@ -1,0 +1,61 @@
+#!/bin/sh
+# Mount one USB filesystem read-only through udisks2.
+# The argument is a device name such as sda1, not a path.
+# The request is read-only, and mount_options.conf refuses a write option.
+# If the kernel still reports a writable mount, remount it, and unmount it
+# if that does not take.
+set -eu
+
+name=${1:?}
+case $name in
+  *[!A-Za-z0-9]*)
+    echo "unexpected device name" >&2
+    exit 1
+    ;;
+esac
+device=/dev/$name
+
+modprobe vfat 2>/dev/null || true
+modprobe exfat 2>/dev/null || true
+modprobe hfsplus 2>/dev/null || true
+
+attempt=0
+while [ "$attempt" -lt 25 ]; do
+  if udisksctl mount --no-user-interaction --block-device "$device" --options ro; then
+    break
+  fi
+  if findmnt -n --source "$device" >/dev/null 2>&1; then
+    break
+  fi
+  attempt=$((attempt + 1))
+  sleep 0.2
+done
+
+if ! findmnt -n --source "$device" >/dev/null 2>&1; then
+  echo "could not mount $device" >&2
+  exit 1
+fi
+
+options=$(findmnt -n -o OPTIONS --source "$device")
+case ",$options," in
+  *,rw,*)
+    ;;
+  *,ro,*)
+    exit 0
+    ;;
+esac
+
+# This changes the kernel flag. It does not write the filesystem.
+mount -o remount,ro "$device" || true
+options=$(findmnt -n -o OPTIONS --source "$device" || true)
+case ",$options," in
+  *,rw,*)
+    ;;
+  *,ro,*)
+    exit 0
+    ;;
+esac
+
+udisksctl unmount --no-user-interaction --block-device "$device" || umount "$device" || true
+echo "$device is not read-only and was unmounted" >&2
+exit 1

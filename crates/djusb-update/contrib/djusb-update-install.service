@@ -1,0 +1,12 @@
+# Installs a signed DJUSB-UPDATE directory from a mounted stick.
+# Not enabled here. The image starts it after a stick is mounted read-only.
+# It never writes to the stick. Reboot afterwards so `djusb-update boot` can
+# try the inactive system slot.
+
+[Unit]
+Description=Install a signed DJ USB update from a mounted stick
+ConditionPathExists=/usr/share/djusb/update.pub
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/djusb-update install-mounted --state /var/lib/djusb/slots.json --key /usr/share/djusb/update.pub --root /media --root /run/media --root /mnt

@@ -273,4 +273,6 @@ A missing `customPlaylistOrders`, or one that is not a JSON object, means there 
 
 `volumeLimit` is the loudest level the wall player will play, from 0 to 1. It is missing when the limit is full. A missing value, or any value that is not a finite number, means 1. Numbers below 0 or above 1 are brought inside that range. The desktop does not read or write this field.
 
+`bluetoothSpeaker` is the speaker the wall player connects when it starts. It is an object with `address` and `name`. `address` is six hexadecimal bytes, written in uppercase and separated by colons. Separators in a stored address are ignored and the bytes are rewritten in that form. `name` is the name shown on the pairing list; a blank name is stored as the address. The field is missing until a speaker is chosen. A missing field, a value that is not an object, or an address that is not six bytes means no speaker. The desktop does not read or write this field.
+
 The desktop stores the two fields under those names. `customPlaylistOrders` is the object above as a JSON string. `energyFlowOpen` is the string `true` or `false`. A device file is the whole object, with `energyFlowOpen` as a boolean. Unknown fields are kept, so a newer version of the file still loads.

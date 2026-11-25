@@ -18,13 +18,14 @@ it depends on, and a check that says when it's done. Tick them off as you go.
 Phases 0 through 4 and Track D are done. The desktop reads libraries through
 the Rust core, and the release workflow publishes unsigned installers. The
 wall player browses and plays on a development machine. CI cross-compiles it
-for a 64-bit Pi. A Lite card has booted the player on a Pi 4. That flash is
-not repeatable yet, so 5.1 is still open.
+for a 64-bit Pi. A Lite card has booted the player on a Pi 4. The repeatable
+recipe is `hardware/image/`. 5.1 stays open until a card prepared with it
+boots that way on its own.
 
 What is left is the appliance (Phase 5) and signed desktop updates (Phase 6).
-Two settings screens already stand in for that work. Bluetooth explains that
-pairing happens on the Pi, and Licences names the main libraries and says the
-full list comes with the image.
+Bluetooth pairing is a list on the settings screen. A speaker on the Pi is
+still the 5.3 check. Licences lists the crates `cargo-deny` reports, plus
+the projectM offer.
 
 Estimates are in **focused working days** for one developer who knows
 TypeScript, was learning Rust, and works with an AI assistant. The
@@ -354,20 +355,24 @@ These pieces turn the binary into a box you can power on.
       before the player. The desktop Screens setting does not apply.
     - [x] A stick that is already mounted shows on the USB list. An empty
       list is the right 5.1 result. Mounting it is 5.2.
+  - The recipe is `hardware/image/`. Flash Raspberry Pi OS Lite (64-bit)
+    with Imager, user `admin`, SSH and Wi-Fi on, and leave the card in.
+    `prepare-boot.ps1` copies the player onto the boot partition and arms
+    `djusb-firstboot.sh`. The first boot needs the network once, to install
+    cage. It then locks the system partition and reboots into the player.
+    Settings go in an ext4 image on the boot partition, mounted at
+    `/var/lib/djusb`, so a power cut keeps them. The boot partition stays
+    writable for that image. The system partition is the one that rejects
+    writes.
   - Each reflash of this card has to come up like this, with no commands
     typed on the Pi afterwards:
     - [ ] Splash, then the USB list, landscape, and no login prompt.
     - [ ] The keyboard is not required for that screen to appear.
     - [ ] Pulling the power during boot and at the USB list brings the same
       screen back.
-    - [ ] A colour change is still there after that power cut. It is not
-      today: the service writes settings under `/var/lib/djusb` on the
-      locked root, and that copy is discarded.
-    - [ ] The system partition rejects writes.
-    - [ ] The recipe in the repo produces that card. The hand-pass notes are
-      `djusb.service`, `djusb-kiosk`, and the `video=` piece of
-      `djusb-cmdline.txt`. The rest of that boot line belongs to the card
-      it was copied from.
+    - [ ] A colour change is still there after that power cut.
+    - [ ] A write on the system partition is refused.
+    - [ ] `prepare-boot.ps1` is the only step between Imager and that boot.
 - [ ] **5.2 USB auto-mount** · 2–3 days · after 5.1
   - udisks2, forced read-only, with FAT32, exFAT and HFS+. The core already
     lists `/media`, `/run/media`, and mounts from `udisksctl dump`. This
@@ -378,22 +383,26 @@ These pieces turn the binary into a box you can power on.
   - bluer: scan, pair, connect, reconnect automatically, and set the speaker
     as the default output. Pairing is a list on the settings screen: the
     platter moves the highlight and the key connects.
-  - The Bluetooth row is already on the settings screen. It shows a notice.
-    This piece replaces that notice.
+  - The notice is gone. The list, the saved speaker, and the BlueZ session
+    are in the player. Pairing still has to be tried with a speaker on the Pi.
   - *Done when:* a speaker can be paired from the platter and the key, and
     it reconnects the next time the box boots.
-- [ ] **5.4 Licence notices** · 1–2 days · after Phase 4
+- [x] **5.4 Licence notices** · 1–2 days · after Phase 4
   - A `cargo-deny` report and a generated notices screen.
   - The licences screen already names the main libraries and the projectM
     offer, and ends with "The full list comes with the appliance image."
     This piece replaces that line.
   - *Done when:* the screen lists the licences `cargo-deny` reports, and
     the placeholder line is gone.
-- [ ] **5.5 Updates from a USB stick** · 3–5 days · after 5.1
+- [x] **5.5 Updates from a USB stick** · 3–5 days · after 5.1
   - Signed update files on a USB stick, installed to a second system
     partition so a failed update rolls back (for example with RAUC).
   - *Done when:* a stick with a signed update installs it, and a bad update
     boots the previous system.
+  - `djusb-update` checks a `DJUSB-UPDATE` directory, copies it onto the
+    other system slot, and rolls back on the next boot if that slot does
+    not confirm. The image (5.1) calls `boot` before the player and
+    `confirm` once the player is up. This piece does not change that image.
 
 ## Phase 6: desktop signing and automatic updates
 
